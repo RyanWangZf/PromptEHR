@@ -21,6 +21,8 @@ from tqdm import tqdm
 import json
 import jsonlines
 import random
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OrdinalEncoder
 
 
 def convert_to_icd9(dxStr):
@@ -43,7 +45,6 @@ def convert_to_3digit_icd9(dxStr):
 input_dir = './data/MIMIC/files/mimiciii/1.4/'
 output_dir = './data/processed'
 
-
 # build input and output file names
 admissionFile = f"{input_dir}/ADMISSIONS.csv"
 diagnosisFile = f"{input_dir}/DIAGNOSES_ICD.csv"
@@ -58,8 +59,32 @@ ICDTokenFile = f"{output_dir}/diagnosis_token_list.txt"
 DrugTokenFile = f"{output_dir}/drug_token_list.txt"
 ProdTokenFile = f"{output_dir}/procedure_token_list.txt"
 DrugTokenMapFile = f"{output_dir}/drug_map_list.txt"
+outputCatCardinalities = f"{output_dir}/cat_cardinalities.txt"
+
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
+
+# get patient features
+df_patient = pd.read_csv(patientFile)
+df_adm = pd.read_csv(admissionFile)
+df_patient = df_patient.sort_values('SUBJECT_ID')
+df_adm = df_adm.sort_values('SUBJECT_ID')
+first_adm = df_adm[['ADMITTIME','SUBJECT_ID']].groupby('SUBJECT_ID').min()
+df_patient['age'] = pd.DatetimeIndex(first_adm['ADMITTIME']).year - pd.DatetimeIndex(df_patient['DOB']).year
+patient_feature = df_patient[['age','GENDER','SUBJECT_ID']].rename(columns={'SUBJECT_ID':'pid','GENDER':'gender'})
+patient_feature['age'] = StandardScaler().fit_transform(patient_feature['age'].values.reshape(-1,1))
+patient_feature['gender'] = OrdinalEncoder().fit_transform(patient_feature['gender'].values.reshape(-1,1))
+cat_cardinalities = [patient_feature['gender'].nunique()]
+with open(outputCatCardinalities, 'w', encoding='utf-8') as f:
+    for cat_card in cat_cardinalities:
+        f.write(str(cat_card)+'\n')
+
+pidFeatureMap = {}
+for idx in patient_feature.index:
+    pid = int(patient_feature.loc[idx].pid)
+    pidFeatureMap[pid] = {}
+    pidFeatureMap[pid]['x_num'] = patient_feature.loc[idx][['age']].values.tolist()
+    pidFeatureMap[pid]['x_cat'] = patient_feature.loc[idx][['gender']].values.tolist()
 
 # save a list of new special tokens: ICD code and others for the language model to learn
 ICDTokenList = []
@@ -78,7 +103,6 @@ for line in infd:
     # admId is 'HADM_ID' column in the original csv file
     admId = int(tokens[2])
     admId = str(admId) # important!!
-
     admTime = datetime.strptime(tokens[3], '%Y-%m-%d %H:%M:%S')
     admDateMap[admId] = admTime
     if pid in pidAdmMap: pidAdmMap[pid].append(admId)
@@ -161,18 +185,20 @@ with open(DrugTokenFile, 'w', encoding='utf-8') as f:
     for k,v in drugTokenMap.items():
         f.write(str(v)+'\n')
 
-
 print('''
 ######################################################################################
 # Conclude and save the processed files
 ######################################################################################
-'''
-)
+''')
+
 fout = jsonlines.open(outputMergeFile, mode='w')
 for pid, admIdList in tqdm(pidAdmMap.items()):
     # pid: patient ID; admIdList: a list of admissions for this patient
     patientDict = defaultdict(list)
     patientDict['pid'] = pid
+    if pid in pidFeatureMap:
+        patientDict['x_num'] = pidFeatureMap[pid]['x_num']
+        patientDict['x_cat'] = pidFeatureMap[pid]['x_cat']
 
     # adm2diagnosis
     sortedDxList = sorted([(admDateMap[admId], admDxMap[admId]) for admId in admIdList])

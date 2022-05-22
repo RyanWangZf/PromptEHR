@@ -62,6 +62,8 @@ class MimicDataset(Dataset):
 
 class MimicDataCollator:
     '''Data collator for train/evaluate the EHR-BART model.
+    Should keep the whole batch all with features or all without features,
+    otherwise raise error!
     '''
     __code_type_list__ = constants.CODE_TYPES
     __special_token_dict__ = constants.SPECIAL_TOKEN_DICT
@@ -96,14 +98,7 @@ class MimicDataCollator:
             batch = self.call_test(samples)
         else:
             batch = self.call_val(samples)
-        # batch = self._ship_to_device(batch)
         return batch
-
-    # def _ship_to_device(self, batch):
-    #     for k,v in batch.items():
-    #         if isinstance(v, torch.Tensor):
-    #             batch[k] = v.cuda()
-    #     return batch
 
     def call_train(self, samples: List[InputDataClass]) -> Dict[str, Any]:
         '''label mask should not be used during training.
@@ -134,7 +129,8 @@ class MimicDataCollator:
                 code_list = list(sample.keys())
                 random.shuffle(code_list)
                 for code in sample.keys():
-                    if code == 'pid': continue
+                    if code in ['pid','x_num','x_cat']: continue
+
                     span = sample[code][adm]
 
                     if len(span) == 0: continue
@@ -173,20 +169,30 @@ class MimicDataCollator:
                 num_token_all, input_str_all, label_str_all = \
                     self._check_max_length(num_token_this_adm, num_token_all, input_str_all, label_str_all)
 
-                inputs = self.tokenizer([' '.join(input_str_all) + span_str_this_adm, ' '.join(label_str_all) + span_label_str_this_adm],
-                    padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
+                # store strs and tokenize at last
+                input_strs = ' '.join(input_str_all) + span_str_this_adm
+                label_strs = ' '.join(label_str_all) + span_label_str_this_adm
+                batch['input_strs'].append(input_strs)
+                batch['label_strs'].append(label_strs)
 
-                batch['input_ids'].append(inputs[0].unsqueeze(0))
-                batch['labels'].append(inputs[1].unsqueeze(0))
+                # inputs = self.tokenizer([' '.join(input_str_all) + span_str_this_adm, ' '.join(label_str_all) + span_label_str_this_adm],
+                #     padding='max_length', add_special_tokens=False, return_tensors='pt')
+                # batch['input_ids'].append(inputs['input_ids'][0].unsqueeze(0))
+                # batch['attention_mask'].append(inputs['attention_mask'][0].unsqueeze(0))
+                # batch['labels'].append(inputs['input_ids'][0].unsqueeze(0))
 
                 input_str_all.append(span_str_this_adm)
                 label_str_all.append(span_label_str_this_adm)
                 num_token_all.append(num_token_this_adm)
 
+                if 'x_num' in sample:
+                    batch['x_num'].append(sample['x_num'])
+                if 'x_cat' in sample:
+                    batch['x_cat'].append(sample['x_cat'])
+
                 if num_adm > 1 and adm < num_adm-1:
                     # build next span predictio ntask
                     next_span = sample[code_type][adm+1]
-
                     if len(next_span) == 0:
                         adm +=1 # empty modality, try next admission
                         continue
@@ -201,23 +207,47 @@ class MimicDataCollator:
                     num_token_all, input_str_all, label_str_all = \
                         self._check_max_length(len(next_span)+2, num_token_all, input_str_all, label_str_all)
 
-                    inputs = self.tokenizer([' '.join(input_str_all)+input_str, ' '.join(label_str_all)+label_str],
-                        padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
+                    # inputs = self.tokenizer([' '.join(input_str_all)+input_str, ' '.join(label_str_all)+label_str],
+                    #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
+                    # batch['input_ids'].append(inputs[0].unsqueeze(0))
+                    # batch['labels'].append(inputs[1].unsqueeze(0))
+                    input_strs = ' '.join(input_str_all)+input_str
+                    label_strs = ' '.join(label_str_all)+label_str
+                    batch['input_strs'].append(input_strs)
+                    batch['label_strs'].append(label_strs)
 
-                    batch['input_ids'].append(inputs[0].unsqueeze(0))
-                    batch['labels'].append(inputs[1].unsqueeze(0))
+                    if 'x_num' in sample:
+                        batch['x_num'].append(sample['x_num'])
+                    if 'x_cat' in sample:
+                        batch['x_cat'].append(sample['x_cat'])
 
                 # go to next admission
                 adm += 1
 
-        # concatenate all the processed
-        batch['input_ids'] = torch.cat(batch['input_ids'], 0)
-        batch['labels'] = torch.cat(batch['labels'], 0)
+        # process all the inputs together
+        n_batch = len(batch['input_strs'])
+        batch_all_inputs = self.tokenizer(batch.pop('input_strs') + batch.pop('label_strs'), padding=True, add_special_tokens=False, return_tensors='pt')
+        batch['input_ids'] = batch_all_inputs['input_ids'][:n_batch]
+        batch['attention_mask'] = batch_all_inputs['attention_mask'][:n_batch]
+        batch['labels'] = batch_all_inputs['input_ids'][n_batch:]
+
+        if 'x_cat' in batch or 'x_num' in batch:
+            # if given features for generation
+            if len(batch['x_cat']) < len(batch['input_ids']) or len(batch['x_num']) < len(batch['input_ids']):
+                raise ValueError('Features are either not all None or not all assigned for the whole batch, please check the input dataset.')
+            else:
+                batch['x_cat'] = torch.tensor(batch['x_cat'], dtype=torch.long)
+                batch['x_num'] = torch.tensor(batch['x_num'], dtype=torch.float)
 
         if batch['input_ids'].shape[0] > self.max_train_batch_size:
+            # drop some samples if batch size is too large to pass to the model
             sub_indices = np.random.choice(np.arange(len(batch['input_ids'])), self.max_train_batch_size, replace=False)
             batch['input_ids'] = batch['input_ids'][sub_indices]
+            batch['attention_mask'] = batch['attention_mask'][sub_indices]
             batch['labels'] = batch['labels'][sub_indices]
+            if 'x_cat' in batch or 'x_num' in batch:
+                batch['x_cat'] = batch['x_cat'][sub_indices]
+                batch['x_num'] = batch['x_num'][sub_indices]
 
         return batch
 
@@ -243,7 +273,8 @@ class MimicDataCollator:
                 num_token_this_adm = 0
 
                 for code in sample.keys():
-                    if code == 'pid': continue
+                    if code in ['pid','x_num','x_cat']: continue
+
                     span = sample[code][adm]
 
                     if len(span) == 0: continue
@@ -285,13 +316,22 @@ class MimicDataCollator:
                     self._check_max_length(num_token_this_adm, num_token_all, input_str_all, label_str_all, label_mask_list_all)
 
                 if num_adm == 1:
+
+                    batch['input_strs'].append(span_str_this_adm)
+                    batch['label_strs'].append(span_label_str_this_adm)
+
                     # if there is only one admission for this patient
-                    inputs = self.tokenizer([span_str_this_adm, span_label_str_this_adm],
-                        padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
-                    batch['input_ids'].append(inputs[0].unsqueeze(0))
-                    batch['labels'].append(inputs[1].unsqueeze(0))
+                    # inputs = self.tokenizer([span_str_this_adm, span_label_str_this_adm],
+                    #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
+                    # batch['input_ids'].append(inputs[0].unsqueeze(0))
+                    # batch['labels'].append(inputs[1].unsqueeze(0))
+
                     label_mask_ts = torch.tensor(self._pad_max_length(label_mask_this_adm)).long()
                     batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+                    if 'x_num' in sample:
+                        batch['x_num'].append(sample['x_num'])
+                    if 'x_cat' in sample:
+                        batch['x_cat'].append(sample['x_cat'])
                     break # no next span prediction for this
 
                 input_str_all.append(span_str_this_adm)
@@ -314,21 +354,44 @@ class MimicDataCollator:
                     num_token_all, input_str_all, label_str_all, label_mask_list_all = \
                         self._check_max_length(len(next_span)+2, num_token_all, input_str_all, label_str_all, label_mask_list_all)
 
-                    inputs = self.tokenizer([' '.join(input_str_all)+input_str, ' '.join(label_str_all)+label_str],
-                        padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
+                    batch['input_strs'].append(' '.join(input_str_all)+input_str)
+                    batch['label_strs'].append(' '.join(label_str_all)+label_str)
+
+                    # inputs = self.tokenizer([' '.join(input_str_all)+input_str, ' '.join(label_str_all)+label_str],
+                    #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
 
                     label_mask = sum(label_mask_list_all,[]) + [0] + np.ones(len(next_span), dtype=int).tolist() + [0]
                     label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
 
-                    batch['input_ids'].append(inputs[0].unsqueeze(0))
-                    batch['labels'].append(inputs[1].unsqueeze(0))
+                    # batch['input_ids'].append(inputs[0].unsqueeze(0))
+                    # batch['labels'].append(inputs[1].unsqueeze(0))
                     batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+                    if 'x_num' in sample:
+                        batch['x_num'].append(sample['x_num'])
+                    if 'x_cat' in sample:
+                        batch['x_cat'].append(sample['x_cat'])
 
                 # go to next admission
                 adm += 1
 
-        batch['input_ids'] = torch.cat(batch['input_ids'], 0)
-        batch['labels'] = torch.cat(batch['labels'], 0)
+        if 'x_cat' in batch or 'x_num' in batch:
+            # if given features for generation
+            if len(batch['x_cat']) < len(batch['input_ids']) or len(batch['x_num']) < len(batch['input_ids']):
+                raise ValueError('Features are either not all None or not all assigned for the whole batch, please check the input dataset.')
+            else:
+                batch['x_cat'] = torch.tensor(batch['x_cat'], dtype=torch.long)
+                batch['x_num'] = torch.tensor(batch['x_num'], dtype=torch.float)
+
+        # batch['input_ids'] = torch.cat(batch['input_ids'], 0)
+        # batch['labels'] = torch.cat(batch['labels'], 0)
+
+        # process all strs inputs at last
+        n_batch = len(batch['input_strs'])
+        batch_all_inputs = self.tokenizer(batch.pop('input_strs') + batch.pop('label_strs'), padding=True, add_special_tokens=False, return_tensors='pt')
+        batch['input_ids'] = batch_all_inputs['input_ids'][:n_batch]
+        batch['attention_mask'] = batch_all_inputs['attention_mask'][:n_batch]
+        batch['labels'] = batch_all_inputs['input_ids'][n_batch:]
+
         batch['label_mask'] = torch.cat(batch['label_mask'], 0)
         return batch
 
@@ -361,7 +424,8 @@ class MimicDataCollator:
                 num_token_this_adm = 0
 
                 for code in sample.keys():
-                    if code == 'pid': continue
+                    if code in ['pid','x_num','x_cat']: continue
+
                     span = sample[code][adm]
 
                     if len(span) == 0: continue
@@ -411,17 +475,28 @@ class MimicDataCollator:
                 if eval_ppl_type == 'spl': # only used when evaluating spatial ppl
                     # if there is only one admission for this patient
                     input_strs = label_str_all[:-1] + [input_str_all[-1]]
-                    inputs = self.tokenizer([' '.join(input_strs), ' '.join(label_str_all)],
-                        padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
+
+                    input_strs = ' '.join(input_strs)
+                    label_strs = ' '.join(label_str_all)
+                    batch['input_strs'].append(input_strs)
+                    batch['label_strs'].append(label_strs)
+
+                    # inputs = self.tokenizer([' '.join(input_strs), ' '.join(label_str_all)],
+                    #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
 
                     label_mask_past = sum(label_mask_list_all[:-1],[])
                     label_mask = [0] * len(label_mask_past) + label_mask_list_all[-1]
 
-                    batch['input_ids'].append(inputs[0].unsqueeze(0))
-                    batch['labels'].append(inputs[1].unsqueeze(0))
-
+                    # batch['input_ids'].append(inputs[0].unsqueeze(0))
+                    # batch['labels'].append(inputs[1].unsqueeze(0))
                     label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
                     batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+
+                    if 'x_num' in sample:
+                        batch['x_num'].append(sample['x_num'])
+                    if 'x_cat' in sample:
+                        batch['x_cat'].append(sample['x_cat'])
+
 
                 elif eval_ppl_type == 'tpl' and adm < num_adm-1: # do next span prediction
                     # build next span predictio ntask
@@ -438,15 +513,24 @@ class MimicDataCollator:
                     num_token_all, input_str_all, label_str_all, label_mask_list_all = \
                         self._check_max_length(len(next_span)+2, num_token_all, input_str_all, label_str_all, label_mask_list_all)
 
-                    inputs = self.tokenizer([' '.join(label_str_all)+input_str, ' '.join(label_str_all)+label_str],
-                        padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
 
                     label_mask = sum(label_mask_list_all,[]) + [0] + np.ones(len(next_span), dtype=int).tolist() + [0]
                     label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
 
-                    batch['input_ids'].append(inputs[0].unsqueeze(0))
-                    batch['labels'].append(inputs[1].unsqueeze(0))
+                    batch['input_strs'].append(' '.join(label_str_all)+input_str)
+                    batch['label_strs'].append(' '.join(label_str_all)+label_str)
+
+                    # inputs = self.tokenizer([' '.join(label_str_all)+input_str, ' '.join(label_str_all)+label_str],
+                    #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
+                    # batch['input_ids'].append(inputs[0].unsqueeze(0))
+                    # batch['labels'].append(inputs[1].unsqueeze(0))
+
                     batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+
+                    if 'x_num' in sample:
+                        batch['x_num'].append(sample['x_num'])
+                    if 'x_cat' in sample:
+                        batch['x_cat'].append(sample['x_cat'])
 
                 # go to next admission
                 adm += 1
@@ -454,8 +538,22 @@ class MimicDataCollator:
         if len(batch['input_ids']) == 0: # num_adm > 1 not found
             return None
 
-        batch['input_ids'] = torch.cat(batch['input_ids'], 0)
-        batch['labels'] = torch.cat(batch['labels'], 0)
+        if 'x_cat' in batch or 'x_num' in batch:
+            # if given features for generation
+            if len(batch['x_cat']) < len(batch['input_ids']) or len(batch['x_num']) < len(batch['input_ids']):
+                raise ValueError('Features are either not all None or not all assigned for the whole batch, please check the input dataset.')
+            else:
+                batch['x_cat'] = torch.tensor(batch['x_cat'], dtype=torch.long)
+                batch['x_num'] = torch.tensor(batch['x_num'], dtype=torch.float)
+
+        # process all together
+        n_batch = len(batch['input_strs'])
+        batch_all_inputs = self.tokenizer(batch.pop('input_strs') + batch.pop('label_strs'), padding=True, add_special_tokens=False, return_tensors='pt')
+        batch['input_ids'] = batch_all_inputs['input_ids'][:n_batch]
+        batch['attention_mask'] = batch_all_inputs['attention_mask'][:n_batch]
+        batch['labels'] = batch_all_inputs['input_ids'][n_batch:]
+        # batch['input_ids'] = torch.cat(batch['input_ids'], 0)
+        # batch['labels'] = torch.cat(batch['labels'], 0)
         batch['label_mask'] = torch.cat(batch['label_mask'], 0)
         return batch
 

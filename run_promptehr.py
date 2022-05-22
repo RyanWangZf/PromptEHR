@@ -7,9 +7,9 @@ from torch.utils.data.dataloader import DataLoader
 from transformers import TrainingArguments
 
 from promptehr.dataset import MimicDataset, MimicDataCollator
-from promptehr.modeling_bart import EHRBartConfig, DataTokenizer, ModelTokenizer
+from promptehr.modeling_config import EHRBartConfig, DataTokenizer, ModelTokenizer
 from promptehr.trainer import PromptEHRTrainer
-from promptehr.bart_model import BartForEHRSimulation
+from promptehr.model import BartForEHRSimulation
 
 # set visible device
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -24,12 +24,12 @@ input_dir = './data/processed'
 data_tokenizer = DataTokenizer.from_pretrained('facebook/bart-base')
 data_tokenizer.extend_vocab(input_dir)
 model_tokenizer = ModelTokenizer(data_tokenizer)
-configuration = EHRBartConfig(data_tokenizer, model_tokenizer)
+configuration = EHRBartConfig(data_tokenizer, model_tokenizer, n_num_feature=1, cat_cardinalities=[2])
 
 # build data collator and dataloader
 mimic_dataset = MimicDataset(input_dir, mode='train')
 mimic_val_dataset = MimicDataset(input_dir, mode='val')
-mimic_train_collator = MimicDataCollator(data_tokenizer, max_train_batch_size=16, mode='train')
+mimic_train_collator = MimicDataCollator(data_tokenizer, max_train_batch_size=32, mode='train')
 mimic_val_collator = MimicDataCollator(data_tokenizer, mode='val')
 
 # let's build the model
@@ -44,13 +44,13 @@ training_args = TrainingArguments(
     learning_rate=5e-5,
     weight_decay=1e-4,
     output_dir="./checkpoints/EHR-BART-all",
-    num_train_epochs=10,
+    num_train_epochs=50,
     save_steps=2000,
     eval_steps=2000,
     warmup_ratio=0.06,
     save_total_limit=10,
     logging_steps=100,
-    dataloader_num_workers=8,
+    dataloader_num_workers=12,
     dataloader_pin_memory=True,
     evaluation_strategy='steps',
     metric_for_best_model='eval_NLL_diagnosis',
