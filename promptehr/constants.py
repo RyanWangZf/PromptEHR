@@ -15,3 +15,5 @@ SPECIAL_TOKEN_DICT = {
 UNKNOWN_TOKEN = '<unk>'
 
 model_max_length = 512
+
+eps = 1e-16

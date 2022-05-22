@@ -137,13 +137,15 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
                 else:
                     target = encoded_labels[label_mask.bool()]
                     mask_logits = logits[label_mask.bool()]
-
                     # debug
                     # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
                     prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
-                    nll = -prob.log()
-                    # perplexity = torch.median(nll.exp())
+                    nll = -torch.log(prob+constants.eps)
                     perplexity = nll.exp()
+
+                    # debug
+                    # if torch.isnan(perplexity).any():
+                    #     pdb.set_trace()
 
         if not return_dict:
             output = (logits,) + outputs[1:]

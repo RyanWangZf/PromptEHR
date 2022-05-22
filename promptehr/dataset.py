@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
 import numpy as np
 import torch
 from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from transformers import BartTokenizer
 from transformers.data.data_collator import InputDataClass
@@ -319,15 +320,15 @@ class MimicDataCollator:
 
                     batch['input_strs'].append(span_str_this_adm)
                     batch['label_strs'].append(span_label_str_this_adm)
+                    batch['label_mask'].append(torch.tensor(label_mask_this_adm))
 
                     # if there is only one admission for this patient
                     # inputs = self.tokenizer([span_str_this_adm, span_label_str_this_adm],
                     #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
                     # batch['input_ids'].append(inputs[0].unsqueeze(0))
                     # batch['labels'].append(inputs[1].unsqueeze(0))
-
-                    label_mask_ts = torch.tensor(self._pad_max_length(label_mask_this_adm)).long()
-                    batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+                    # label_mask_ts = torch.tensor(self._pad_max_length(label_mask_this_adm)).long()
+                    # batch['label_mask'].append(label_mask_ts.unsqueeze(0))
                     if 'x_num' in sample:
                         batch['x_num'].append(sample['x_num'])
                     if 'x_cat' in sample:
@@ -361,11 +362,13 @@ class MimicDataCollator:
                     #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
 
                     label_mask = sum(label_mask_list_all,[]) + [0] + np.ones(len(next_span), dtype=int).tolist() + [0]
-                    label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
+                    batch['label_mask'].append(torch.tensor(label_mask))
 
+                    # label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
                     # batch['input_ids'].append(inputs[0].unsqueeze(0))
                     # batch['labels'].append(inputs[1].unsqueeze(0))
-                    batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+                    # batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+
                     if 'x_num' in sample:
                         batch['x_num'].append(sample['x_num'])
                     if 'x_cat' in sample:
@@ -392,7 +395,9 @@ class MimicDataCollator:
         batch['attention_mask'] = batch_all_inputs['attention_mask'][:n_batch]
         batch['labels'] = batch_all_inputs['input_ids'][n_batch:]
 
-        batch['label_mask'] = torch.cat(batch['label_mask'], 0)
+        # pad all label mask and concat
+        batch['label_mask'] = pad_sequence(batch['label_mask'], batch_first=True, padding_value=0)
+        # batch['label_mask'] = torch.cat(batch['label_mask'], 0)
         return batch
 
     def call_test(self, samples: List[InputDataClass]) -> Dict[str, Any]:
@@ -486,11 +491,11 @@ class MimicDataCollator:
 
                     label_mask_past = sum(label_mask_list_all[:-1],[])
                     label_mask = [0] * len(label_mask_past) + label_mask_list_all[-1]
-
+                    batch['label_mask'].apepnd(torch.tensor(label_mask))
                     # batch['input_ids'].append(inputs[0].unsqueeze(0))
                     # batch['labels'].append(inputs[1].unsqueeze(0))
-                    label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
-                    batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+                    # label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
+                    # batch['label_mask'].append(label_mask_ts.unsqueeze(0))
 
                     if 'x_num' in sample:
                         batch['x_num'].append(sample['x_num'])
@@ -515,7 +520,9 @@ class MimicDataCollator:
 
 
                     label_mask = sum(label_mask_list_all,[]) + [0] + np.ones(len(next_span), dtype=int).tolist() + [0]
-                    label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
+                    batch['label_mask'].append(torch.tensor(label_mask))
+
+                    # label_mask_ts = torch.tensor(self._pad_max_length(label_mask)).long()
 
                     batch['input_strs'].append(' '.join(label_str_all)+input_str)
                     batch['label_strs'].append(' '.join(label_str_all)+label_str)
@@ -524,8 +531,7 @@ class MimicDataCollator:
                     #     padding='max_length', add_special_tokens=False, return_tensors='pt').input_ids
                     # batch['input_ids'].append(inputs[0].unsqueeze(0))
                     # batch['labels'].append(inputs[1].unsqueeze(0))
-
-                    batch['label_mask'].append(label_mask_ts.unsqueeze(0))
+                    # batch['label_mask'].append(label_mask_ts.unsqueeze(0))
 
                     if 'x_num' in sample:
                         batch['x_num'].append(sample['x_num'])
@@ -554,7 +560,9 @@ class MimicDataCollator:
         batch['labels'] = batch_all_inputs['input_ids'][n_batch:]
         # batch['input_ids'] = torch.cat(batch['input_ids'], 0)
         # batch['labels'] = torch.cat(batch['labels'], 0)
-        batch['label_mask'] = torch.cat(batch['label_mask'], 0)
+        batch['label_mask'] = pad_sequence(batch['label_mask'], batch_first=True, padding_value=0)
+
+        # batch['label_mask'] = torch.cat(batch['label_mask'], 0)
         return batch
 
 
