@@ -43,7 +43,7 @@ training_args = TrainingArguments(
     per_device_train_batch_size=16, # no. of patients in each batch, default to be 1
     per_device_eval_batch_size=64,
     gradient_accumulation_steps=1,
-    learning_rate=2e-5,
+    learning_rate=1e-5,
     weight_decay=1e-4,
     output_dir="./checkpoints/EHR-BART-all",
     num_train_epochs=50,
@@ -61,7 +61,7 @@ training_args = TrainingArguments(
     load_best_model_at_end=True,
     logging_dir='./logs',      # directory for storing logs
     overwrite_output_dir=True,
-    seed=42,
+    seed=123,
 )
 trainer = PromptEHRTrainer(
     model=model,

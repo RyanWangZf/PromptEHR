@@ -201,7 +201,12 @@ class PromptEHRTrainer(Trainer):
 
             # Update containers on host
             if loss is not None:
-                losses = self._nested_gather(loss.repeat(batch_size))
+                if len(loss) == 1:
+                    # if output the mean batch loss
+                    losses = self._nested_gather(loss.repeat(batch_size))
+                else:
+                    # if output the raw batch loss sequence
+                    losses = loss
                 losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
             if labels is not None:
                 labels = self._pad_across_processes(labels)
@@ -310,6 +315,8 @@ class PromptEHRTrainer(Trainer):
                 # deal with nan
                 print('[warning] find NaN in computed ppl, replace with 1e8, may cause incorrect ppl results.')
                 all_losses = np.nan_to_num(all_losses, nan=1e8)
+
+            # take median instead of mean for the sake of stability
             metrics[f"{metric_key_prefix}_loss"] = np.median(all_losses).item()
 
         # Prefix all keys with metric_key_prefix + '_'
@@ -367,7 +374,8 @@ class PromptEHRTrainer(Trainer):
                     loss, outputs = self.compute_loss(model, inputs, return_outputs=True, return_perplexity=True)
 
                 if loss is not None:
-                    loss = loss.mean().detach()
+                    # loss = loss.mean().detach()
+                    loss = loss.detach()
 
                 if isinstance(outputs, dict):
                     logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
