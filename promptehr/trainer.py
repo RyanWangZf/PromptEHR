@@ -306,11 +306,11 @@ class PromptEHRTrainer(Trainer):
         metrics = denumpify_detensorize(metrics)
 
         if all_losses is not None:
-            # debug
             if np.isnan(all_losses).any():
-                pdb.set_trace()
-                pass
-            metrics[f"{metric_key_prefix}_loss"] = all_losses.mean().item()
+                # deal with nan
+                print('[warning] find NaN in computed ppl, replace with 1e8, may cause incorrect ppl results.')
+                all_losses = np.nan_to_num(all_losses, nan=1e8)
+            metrics[f"{metric_key_prefix}_loss"] = np.median(all_losses)
 
         # Prefix all keys with metric_key_prefix + '_'
         for key in list(metrics.keys()):
