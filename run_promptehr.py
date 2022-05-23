@@ -11,6 +11,8 @@ from promptehr.modeling_config import EHRBartConfig, DataTokenizer, ModelTokeniz
 from promptehr.trainer import PromptEHRTrainer
 from promptehr.model import BartForEHRSimulation
 
+
+
 # set visible device
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
@@ -45,20 +47,21 @@ training_args = TrainingArguments(
     weight_decay=1e-4,
     output_dir="./checkpoints/EHR-BART-all",
     num_train_epochs=50,
-    save_steps=2000,
-    eval_steps=2000,
+    save_steps=10,
+    eval_steps=10,
     warmup_ratio=0.06,
     save_total_limit=10,
     logging_steps=100,
-    dataloader_num_workers=12,
+    dataloader_num_workers=8,
     dataloader_pin_memory=True,
     evaluation_strategy='steps',
-    metric_for_best_model='eval_NLL_diagnosis',
+    metric_for_best_model='eval_ppl_diagnosis',
     greater_is_better=False, # NLL is the less the better
     eval_accumulation_steps=10,
     load_best_model_at_end=True,
     logging_dir='./logs',      # directory for storing logs
     overwrite_output_dir=True,
+    seed=42,
 )
 trainer = PromptEHRTrainer(
     model=model,
