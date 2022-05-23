@@ -310,7 +310,7 @@ class PromptEHRTrainer(Trainer):
                 # deal with nan
                 print('[warning] find NaN in computed ppl, replace with 1e8, may cause incorrect ppl results.')
                 all_losses = np.nan_to_num(all_losses, nan=1e8)
-            metrics[f"{metric_key_prefix}_loss"] = np.median(all_losses)
+            metrics[f"{metric_key_prefix}_loss"] = np.median(all_losses).item()
 
         # Prefix all keys with metric_key_prefix + '_'
         for key in list(metrics.keys()):
