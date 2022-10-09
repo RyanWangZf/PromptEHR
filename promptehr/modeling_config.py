@@ -37,7 +37,18 @@ class DataTokenizer(BartTokenizer):
     special_token_dict = constants.SPECIAL_TOKEN_DICT
     code_vocab = dict().fromkeys(new_token_type_list)
 
-    def extend_vocab(self, data_dir):
+    def extend_vocab(self, token_dict):
+        '''
+        Parameters:
+        ----------
+        token_dict: dict
+            key: code type, value: a list of tokens.
+        '''
+        for key in token_dict.keys():
+            self.code_vocab[key] = np.array(token_dict[key])
+            self.add_tokens(token_dict[key])
+
+    def extend_vocab_from_dir(self, data_dir):
         # add new tokens from the data dir
         for key in self.new_token_type_list:
             filename = os.path.join(data_dir,'{}_token_list.txt'.format(key))
