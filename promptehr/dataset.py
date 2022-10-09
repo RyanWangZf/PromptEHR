@@ -70,12 +70,20 @@ class MimicDataCollator:
     __special_token_dict__ = constants.SPECIAL_TOKEN_DICT
     __del_or_rep__ = ['rep', 'del']
 
-    def __init__(self, tokenizer, mlm_prob=0.15, lambda_poisson=3.0, del_prob=0.15, max_train_batch_size=16, drop_feature=False, mode='train'):
+    def __init__(self, 
+        tokenizer,
+        code_types,
+        mlm_prob=0.15, lambda_poisson=3.0, del_prob=0.15, max_train_batch_size=16, drop_feature=False, mode='train'):
         '''mlm_prob: probability of masked tokens
         lambda_poisoon: span infilling parameters
         del_prob: probability of delete tokens
         max_train_batch_size: sample batch to avoid OOM, because for each patient we will generate a batch of series
         '''
+        # update code_types
+        self.__code_type_list__ = code_types
+        self.__special_token_dict__ = {}
+        for code in code_types: self.__special_token_dict__[code] = [f'<{code}>', f'</{code}>']
+
         self.mlm_prob = mlm_prob
         self.tokenizer = tokenizer
         self.tokenizer.model_max_length = constants.model_max_length

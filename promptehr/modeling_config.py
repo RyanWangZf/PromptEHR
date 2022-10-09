@@ -37,6 +37,12 @@ class DataTokenizer(BartTokenizer):
     special_token_dict = constants.SPECIAL_TOKEN_DICT
     code_vocab = dict().fromkeys(new_token_type_list)
 
+    def update_config(self, code_types):
+        self.new_token_type_list = code_types
+        self.special_token_dict = {}
+        for code_type in code_types:
+            self.special_token_dict[code_type] = [f'<{code_type}>', f'</{code_type}>']
+
     def extend_vocab(self, token_dict):
         '''
         Parameters:
