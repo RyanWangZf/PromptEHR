@@ -72,6 +72,19 @@ class PromptEHR(nn.Module):
         super().__init__()
         self.data_tokenizer = DataTokenizer.from_pretrained('facebook/bart-base')
         self.data_tokenizer.extend_vocab(token_dict)
+        self.data_tokenizer.update_config(code_types=list(token_dict.keys()))
+        self.config = {
+            'token_dict': token_dict,
+            'code_types': list(token_dict.keys()),
+            'n_num_feature':n_num_feature,
+            'cat_cardinalities':cat_cardinalities,
+            'epoch':epoch,
+            'batch_size':batch_size,
+            'eval_batch_size':eval_batch_size,
+            'eval_step':eval_step,
+            'learning_rate':learning_rate,
+            'weight_decay':weight_decay,
+        }
         self.model_tokenizer = ModelTokenizer(self.data_tokenizer)
         self.configuration = EHRBartConfig(self.data_tokenizer, self.model_tokenizer, n_num_feature=n_num_feature, cat_cardinalities=cat_cardinalities)
         self.device = device
@@ -122,8 +135,13 @@ class PromptEHR(nn.Module):
         mimic_dataset = train_data['dataset']
         mimic_val_dataset = val_data['dataset']
         
-        mimic_train_collator = MimicDataCollator(self.data_tokenizer, max_train_batch_size=32, mode='train')
-        mimic_val_collator = MimicDataCollator(self.data_tokenizer, mode='val')
+        mimic_train_collator = MimicDataCollator(self.data_tokenizer, 
+            code_types=self.config['code_types'],
+            max_train_batch_size=32, mode='train')
+            
+        mimic_val_collator = MimicDataCollator(self.data_tokenizer, 
+            code_types=self.config['code_types'],
+            mode='val')
 
         trainer = PromptEHRTrainer(
             model=self.model,
