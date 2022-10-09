@@ -1,3 +1,4 @@
+from collections import defaultdict
 import warnings
 import pdb, os
 import json
@@ -39,9 +40,14 @@ class DataTokenizer(BartTokenizer):
 
     def update_config(self, code_types):
         self.new_token_type_list = code_types
+        self.code_vocab = dict().fromkeys(code_types)
         self.special_token_dict = {}
+        special_token_list = []
         for code_type in code_types:
-            self.special_token_dict[code_type] = [f'<{code_type}>', f'</{code_type}>']
+            l = [f'<{code_type}>', f'</{code_type}>']
+            self.special_token_dict[code_type] = l
+            special_token_list.extend(l)
+        self.add_tokens(special_token_list)
 
     def extend_vocab(self, token_dict):
         '''
@@ -76,7 +82,7 @@ class ModelTokenizer:
         tokenizer_dict = {}
         num_token_dict = {}
         for key, value in tokenizer.code_vocab.items():
-            vocab = {}
+            vocab = defaultdict(int)
             vocab[constants.UNKNOWN_TOKEN] = 0
             for i,token in enumerate(tokenizer.special_token_dict[key]):
                 vocab[map_token(token)] = i+1

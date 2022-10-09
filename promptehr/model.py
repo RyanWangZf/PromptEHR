@@ -15,7 +15,7 @@ from .modeling_promptbart import PromptBartModel
 from . import constants
 
 class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
-    def __init__(self, config: EHRBartConfig, model_tokenizer: ModelTokenizer):
+    def __init__(self, config: EHRBartConfig, model_tokenizer: ModelTokenizer=None):
         super().__init__(config)
 
         config.is_decoder = False
@@ -27,7 +27,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
         self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
 
         self.lm_head = {}
-        for key in constants.CODE_TYPES:
+        for key in model_tokenizer.tokenizer_dict.keys():
             self.lm_head[key] =  nn.Linear(
                 config.d_model, config.__dict__[key], bias=False,
             )
@@ -72,7 +72,8 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
 
         Returns:
         """
-        assert code_type in ['diagnosis', 'procedure', 'drug', 'labtest',]
+        code_types = list(self.model_tokenizer.tokenizer_dict.keys())
+        assert code_type in code_types
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
