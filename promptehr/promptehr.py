@@ -15,6 +15,7 @@ from torch import nn
 from torch.utils.data.dataloader import DataLoader
 from transformers import TrainingArguments
 import numpy as np
+from tqdm import tqdm
 
 from .dataset import MimicDataset, MimicDataCollator
 from .modeling_config import EHRBartConfig, DataTokenizer, ModelTokenizer
@@ -112,7 +113,8 @@ class PromptEHR(nn.Module):
             'weight_decay':weight_decay,
         }
         self.device = device
-
+        if isinstance(device, list):
+            self._set_visible_device(device=device)
         self.training_args = TrainingArguments(
             per_device_train_batch_size=batch_size, # no. of patients in each batch, default to be 1
             per_device_eval_batch_size=eval_batch_size,
@@ -165,7 +167,7 @@ class PromptEHR(nn.Module):
         # start training
         self._fit(train_data=train_data,val_data=val_data)
     
-    def predict(self, test_data, n_per_sample=None, n=None, sample_config=None):
+    def predict(self, test_data, n_per_sample=None, n=None, sample_config=None, verbose=None):
         '''
         Generate synthetic records based on input real patient seq data.
 
@@ -185,7 +187,11 @@ class PromptEHR(nn.Module):
             Configuration for sampling synthetic records, key parameters:
             'num_beams': Number of beams in beam search, if set `1` then beam search is deactivated;
             'top_k': Sampling from top k candidates.
-            'temperature': temperature to make sampling distribution flater or skewer.        
+            'temperature': temperature to make sampling distribution flater or skewer.
+        
+        verbose: bool
+            If print the progress bar or not.
+
         Returns
         -------
         Synthetic patient records in `SequencePatient` format.
@@ -203,12 +209,29 @@ class PromptEHR(nn.Module):
         test_dataloader = self._get_test_dataloader(test_data)
 
         # make generation
-        outputs = self._predict_on_dataloader(test_dataloader, n, n_per_sample)
+        outputs = self._predict_on_dataloader(test_dataloader, n, n_per_sample, verbose=verbose)
 
-        pdb.set_trace()
+        # formulate outputs to standard sequencepatient data
+        # need 'visit', 'order', 'feature', 'n_num_feature', 'cat_cardinalties'
+        visit, feature = [], []
+        for output in outputs:
+            visit_, feature_ = [], []
+            for code in self.config['code_type']: visit_.append(output[code])
+            feature_.extend(output['x_num'])
+            feature_.extend(output['x_cat'])
+            visit.append(visit_)
+            feature.append(feature_)
+        feature = np.stack(feature, 0)
+        
+        return_res = {
+            'visit':visit, 
+            'feature':feature, 
+            'order':self.config['code_type'],
+            'n_num_feature':self.config['n_num_feature'],
+            'cat_cardinalties':self.config['cat_cardinalities'],
+        }
+        return return_res
 
-        pass
-    
     def save_model(self, output_dir):
         '''
         Save the learned simulation model to the disk.
@@ -340,8 +363,8 @@ class PromptEHR(nn.Module):
                 if not isinstance(sample['x'], list): 
                     sample['x'] = sample['x'].tolist()
 
-                post_sample['x_num'] = sample['x'][:self.config['n_num_feature']]
-                post_sample['x_cat'] = sample['x'][self.config['n_num_feature']:]
+                post_sample['x_num'] = torch.tensor(sample['x'][:self.config['n_num_feature']])
+                post_sample['x_cat'] = torch.tensor(sample['x'][self.config['n_num_feature']:], dtype=int)
                 post_samples.append(post_sample)
             return post_samples
 
@@ -453,9 +476,12 @@ class PromptEHR(nn.Module):
         assert len(num_visit_uq) == 1, f'Find mismatch in the number of visit events {num_visit_list}, please check the input data {visits}.'
         return num_visit_uq[0]
 
-    def _predict_on_dataloader(self, dataloader, n, n_per_sample):
+    def _predict_on_dataloader(self, dataloader, n, n_per_sample, verbose=None):
         total_number = 0
         data_iterator = iter(dataloader)
+
+        if verbose:
+            pbar = tqdm(total=n)
 
         new_record_list = []
         while total_number < n:
@@ -463,16 +489,31 @@ class PromptEHR(nn.Module):
                 data = next(data_iterator)
             except:
                 data_iterator = iter(dataloader)
-                data = next(data_iterator)
+                data = next(data_iterator)            
+            data = data[0] # batch size is 1 when doing generation
+
+            # to device
+            device = 'cpu' if self.device == 'cpu' else 'cuda:0'
+            if 'x_num' in data: data['x_num'] = data['x_num'].to(device)
+            if 'x_cat' in data: data['x_cat'] = data['x_cat'].to(device)
             
-            inputs = self._prepare_input_for_generation(data[0]) # batch size is 1 when doing generation
+            inputs = self._prepare_input_for_generation(data) 
 
             # start generation
             for _ in range(n_per_sample):
-                new_record = self._generation_loop(data[0], inputs)
+                new_record = self._generation_loop(data, inputs)
+                new_record.update({
+                    'x_cat':data['x_cat'].cpu().numpy().tolist(),
+                    'x_num':data['x_num'].cpu().numpy().tolist(),
+                })
                 new_record_list.append(new_record)
-
-            pdb.set_trace()
+            
+            total_number += n_per_sample
+            if verbose:
+                pbar.update(total_number)
+        
+        pbar.close()
+        return new_record_list
 
     def _prepare_input_for_generation(self, data):        
         def _process_span(span, code):
@@ -496,7 +537,7 @@ class PromptEHR(nn.Module):
         init_input_ids = torch.cat([bos[:,None],code_prompt_idx[:,0,None],init_codes['input_ids']], dim=-1)
         init_input_ids = _to_device({'input_ids':init_input_ids}, self.model.device)['input_ids']
         input_ids = init_input_ids.clone()
-        return {'input_ids':input_ids, 'init_input_ids':init_input_ids, 'num_visit':num_visit, 'init_code':init_code_str}
+        return {'input_ids':input_ids, 'init_input_ids':init_input_ids, 'num_visit':num_visit, 'init_code':init_code}
 
     def _generation_loop(self, data, inputs):
         new_record = defaultdict(list)
@@ -539,8 +580,9 @@ class PromptEHR(nn.Module):
                 
                 else:
                     sample_gen_kwargs['max_length'] = num_code+2
-                    # sample_gen_kwargs['x_cat'] = data['x_cat']
-                    # sample_gen_kwargs['x_num'] = data['x_num']
+                    # do conditional generation
+                    sample_gen_kwargs['x_cat'] = data['x_cat']
+                    sample_gen_kwargs['x_num'] = data['x_num']
 
                     new_next_tokens = self.model.generate(input_ids, **sample_gen_kwargs)
 
@@ -555,8 +597,13 @@ class PromptEHR(nn.Module):
 
                     # append to the synthetic record dict
                     code_str_list = tokenizer.batch_decode(new_next_tokens)[0]
+
+                    # remove special tokens ahead of original code event
+                    # e.g., `diag_384` -> `384`
+                    code_str_list = code_str_list.replace(code+'_','')
                     code_str_list = code_str_list.split()
-                    new_record[code].append(code_str_list+sub_code.tolist())
+                    code_str_list = [int(c) for c in code_str_list+sub_code.tolist()]
+                    new_record[code].append(list(set(code_str_list)))
 
                     if first_code_flag:
                         new_next_tokens = torch.cat([new_next_tokens, code_prompt_idx[:,1:]], dim=-1)
@@ -590,8 +637,6 @@ class PromptEHR(nn.Module):
 
         # add init code
         new_record[self.config['code_type'][0]][0] += inputs['init_code']
-        pdb.set_trace()
-        print(new_record)
         return new_record
 
 
