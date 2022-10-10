@@ -144,8 +144,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
                     nll = -torch.log(prob+constants.eps)
                     perplexity = nll.exp()
                     if torch.isnan(perplexity).any():
-                        pdb.set_trace()
-                        pass
+                        warnings.warn('Find NaN perplexity during the forward of EHRBART model!')
 
         if not return_dict:
             output = (logits,) + outputs[1:]
