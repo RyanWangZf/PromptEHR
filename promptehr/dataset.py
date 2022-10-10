@@ -73,6 +73,7 @@ class MimicDataCollator:
     def __init__(self, 
         tokenizer,
         code_types,
+        n_num_feature,
         mlm_prob=0.15, lambda_poisson=3.0, del_prob=0.15, max_train_batch_size=16, drop_feature=False, mode='train'):
         '''mlm_prob: probability of masked tokens
         lambda_poisoon: span infilling parameters
@@ -93,6 +94,7 @@ class MimicDataCollator:
         self.max_train_batch_size = max_train_batch_size # sample batch to avoid OOM
         self.eval_code_type = None # remained for evaluation
         self.drop_feature = drop_feature
+        self.n_num_feature = n_num_feature
 
         assert mode in ['train', 'val', 'test']
         if mode=='train': self.is_training=True
@@ -101,6 +103,22 @@ class MimicDataCollator:
         else: self.is_testing=False
 
     def __call__(self, samples: List[InputDataClass]) -> Dict[str, Any]:
+        # samples format
+        # [{'pid': 'x_num':[], 'x_cat':[], 'diagnosis':[[],[],[],...], 'procedure': [[],[]...], 'drug':[[],[],...] }]
+        def _seq_patient_to_prompther(samples):
+            post_samples = []
+            for sample in samples:
+                post_sample = {}
+                visit = sample['v']
+                post_sample.update(visit)
+                if not isinstance(sample['x'], list): sample['x'] = sample['x'].tolist()
+                post_sample['x_num'] = sample['x'][:self.n_num_feature]
+                post_sample['x_cat'] = sample['x'][self.n_num_feature:]
+                post_samples.append(post_sample)
+            return post_samples
+        
+        samples = _seq_patient_to_prompther(samples)
+
         if self.is_training:
             batch = self.call_train(samples)
         elif self.is_testing:
@@ -146,6 +164,9 @@ class MimicDataCollator:
 
                     # restrict the num of tokens in each span
                     span = random.sample(span, min(20, len(span)))
+
+                    # translate span to code_span
+                    span = self._process_span(span, code)
 
                     span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
                     span_label_str_list.append(span_str)
@@ -200,7 +221,7 @@ class MimicDataCollator:
                     batch['x_cat'].append(sample['x_cat'])
 
                 if num_adm > 1 and adm < num_adm-1:
-                    # build next span predictio ntask
+                    # build next span prediction task
                     next_span = sample[code_type][adm+1]
                     if len(next_span) == 0:
                         adm +=1 # empty modality, try next admission
@@ -208,6 +229,9 @@ class MimicDataCollator:
 
                     # do shuffling
                     next_span = random.sample(next_span, len(next_span))
+
+                    # translate span to code_span
+                    next_span = self._process_span(next_span, code)
 
                     # do next span prediction
                     label_str = self.__special_token_dict__[code_type][0] + ' '.join(next_span) + self.__special_token_dict__[code_type][1]
@@ -266,7 +290,8 @@ class MimicDataCollator:
         batch['code_type'] = eval_code_type
 
         for sample in samples:
-            num_adm = len(sample['diagnosis'])
+            sample_keys = [k for k in sample.keys() if k in self.__code_type_list__]
+            num_adm = len(sample[sample_keys[0]])
 
             # accumulated during enumerating all admisions
             input_str_all = []
@@ -288,6 +313,9 @@ class MimicDataCollator:
 
                     if len(span) == 0: continue
                     if len(span) > 20: span = random.sample(span, 20)
+
+                    # translate span to code_span
+                    span = self._process_span(span, code)
 
                     num_token_this_adm += len(span) + 2
                     span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
@@ -343,6 +371,7 @@ class MimicDataCollator:
                 if num_adm > 1 and adm < num_adm-1:
                     # build next span predictio ntask
                     next_span = sample[eval_code_type][adm+1]
+                    next_span = self._process_span(next_span, eval_code_type)
 
                     if len(next_span) == 0:
                         adm += 1 # empty modality, try next admission
@@ -397,7 +426,8 @@ class MimicDataCollator:
         batch['code_type'] = eval_code_type
 
         for sample in samples:
-            num_adm = len(sample['diagnosis'])
+            sample_keys = [k for k in sample.keys() if k in self.__code_type_list__]
+            num_adm = len(sample[sample_keys[0]])
 
             if num_adm == 1 and eval_ppl_type == 'tpl': # cant evaluate tpl if there is only one admission
                 continue
@@ -422,6 +452,9 @@ class MimicDataCollator:
 
                     if len(span) == 0: continue
                     if len(span) > 20: span = random.sample(span, 20)
+
+                    # translate span to code_span
+                    span = self._process_span(span, code)
 
                     num_token_this_adm += len(span) + 2
                     span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
@@ -482,6 +515,7 @@ class MimicDataCollator:
                 elif eval_ppl_type == 'tpl' and adm < num_adm-1: # do next span prediction
                     # build next span predictio ntask
                     next_span = sample[eval_code_type][adm+1]
+                    next_span = self._process_span(next_span, eval_code_type)
 
                     if len(next_span) == 0:
                         adm += 1 # empty modality, try next admission
@@ -632,3 +666,6 @@ class MimicDataCollator:
             return num_token_all, input_str_all, label_str_all
         else:
             return num_token_all, input_str_all, label_str_all, label_mask_list_all
+
+    def _process_span(self, span, code):
+        return [code+'_'+str(s) for s in span]

@@ -81,17 +81,6 @@ class ModelTokenizer:
         ids = torch.tensor([x.ids for x in ids_list], device=input_ids.device)
         return ids
 
-    def save(self, output_dir):
-        for key,value in self.tokenizer_dict.items():
-            out_file = os.path.join(output_dir, f'{key}_vocab.json')
-            with open(out_file, 'w', encoding='utf-8') as f:
-                # TODO: get tokenizer vocabulary and save
-                pdb.set_trace()
-                vocab = value.vocab
-                f.write(
-                    json.dumps(vocab)
-                )
-
     @property
     def get_num_tokens(self):
         return self.num_token_dict
