@@ -6,6 +6,7 @@ import pdb
 import json
 import math
 import glob
+import random
 from collections import defaultdict
 
 import dill
@@ -18,6 +19,7 @@ import numpy as np
 from .dataset import MimicDataset, MimicDataCollator
 from .modeling_config import EHRBartConfig, DataTokenizer, ModelTokenizer
 from .trainer import PromptEHRTrainer
+from .evaluator import Evaluator
 from .model import BartForEHRSimulation
 
 class PromptEHR(nn.Module):
@@ -253,6 +255,36 @@ class PromptEHR(nn.Module):
         self.load_state_dict(state_dict, strict=True)
         print('Load the pre-trained model from:', checkpoint)
 
+    def evaluate(self, test_data):
+        '''
+        Evaluate the trained PromptEHR model on the input data, will test the perplexity
+        for each type of codes.
+        
+        Parameters
+        ----------
+        test_data: PatientSequence
+            Standard sequential patient records in `PatientSequence` format.
+        '''
+        self.model.eval()
+
+        collator = MimicDataCollator(self.data_tokenizer, 
+            code_types=self.config['code_type'],
+            n_num_feature=self.config['n_num_feature'],
+            mode='test', drop_feature=False)
+
+        evaluator = Evaluator(
+            self.model,
+            test_data,
+            collator,
+            device='cpu' if self.device == 'cpu' else 'cuda:0',
+        )
+
+        code_types = self.config['code_type']
+        ppl_types = ['tpl','spl']
+        for code_type in code_types:
+            for ppl_type in ppl_types:
+                ppl = evaluator.evaluate(code_type, ppl_type)
+                print(f'code: {code_type}, ppl_type: {ppl_type}, value: {ppl}')
 
     def _save_config(self, config, output_dir=None):        
         temp_path = os.path.join(output_dir, 'model_config.json')
@@ -298,12 +330,28 @@ class PromptEHR(nn.Module):
         return config
 
     def _get_test_dataloader(self, dataset):
+        def _seq_patient_to_prompther(samples):
+            post_samples = []
+            for sample in samples:
+                post_sample = {}
+                visit = sample['v']
+                post_sample.update(visit)
+
+                if not isinstance(sample['x'], list): 
+                    sample['x'] = sample['x'].tolist()
+
+                post_sample['x_num'] = sample['x'][:self.config['n_num_feature']]
+                post_sample['x_cat'] = sample['x'][self.config['n_num_feature']:]
+                post_samples.append(post_sample)
+            return post_samples
+
         dataloader = DataLoader(dataset,
                 batch_size=1, # one patient once
                 drop_last=False,
                 num_workers=0,
                 pin_memory=False,
                 shuffle=False,
+                collate_fn=_seq_patient_to_prompther,
                 )
         return dataloader
 
@@ -325,26 +373,11 @@ class PromptEHR(nn.Module):
         state_dict = self.state_dict()
         torch.save(state_dict, filepath)
 
-    def _predict_on_dataloader(self, dataloader, n, n_per_sample):
-        total_number = 0
-        data_iterator = iter(dataloader)
-
-        while total_number < n:
-            try:
-                data = next(data_iterator)
-            except:
-                data_iterator = iter(dataloader)
-                data = next(data_iterator)
-
-            pdb.set_trace()
-
-        pass
-
     def _fit(self, train_data, val_data):
         mimic_train_collator = MimicDataCollator(self.data_tokenizer, 
             code_types=self.config['code_type'],
             n_num_feature=self.config['n_num_feature'],
-            max_train_batch_size=32, mode='train')
+            max_train_batch_size=self.config['batch_size'], mode='train')
 
         mimic_val_collator = MimicDataCollator(self.data_tokenizer, 
             code_types=self.config['code_type'],
@@ -419,6 +452,147 @@ class PromptEHR(nn.Module):
         num_visit_uq = list(set(num_visit_list))
         assert len(num_visit_uq) == 1, f'Find mismatch in the number of visit events {num_visit_list}, please check the input data {visits}.'
         return num_visit_uq[0]
+
+    def _predict_on_dataloader(self, dataloader, n, n_per_sample):
+        total_number = 0
+        data_iterator = iter(dataloader)
+
+        new_record_list = []
+        while total_number < n:
+            try:
+                data = next(data_iterator)
+            except:
+                data_iterator = iter(dataloader)
+                data = next(data_iterator)
+            
+            inputs = self._prepare_input_for_generation(data[0]) # batch size is 1 when doing generation
+
+            # start generation
+            for _ in range(n_per_sample):
+                new_record = self._generation_loop(data[0], inputs)
+                new_record_list.append(new_record)
+
+            pdb.set_trace()
+
+    def _prepare_input_for_generation(self, data):        
+        def _process_span(span, code):
+            return [code+'_'+str(s) for s in span]
+        
+        def _to_device(x, device):
+            for k,v in x.items():
+                x[k] = v.to(device)
+            return x
+
+        tokenizer = self.data_tokenizer
+        code_type = [k for k in data.keys() if k in self.config['code_type']]
+        num_visit = len(data[code_type[0]])
+        
+        # init codes
+        init_code = random.sample(data[code_type[0]][0], 1)
+        init_code_str = _process_span(init_code, code_type[0])
+        init_codes = tokenizer(init_code_str, return_tensors='pt', add_special_tokens=False)
+        bos = torch.tensor([tokenizer.bos_token_id])
+        code_prompt_idx = tokenizer.encode(tokenizer.special_token_dict[code_type[0]], add_special_tokens=False, return_tensors='pt')
+        init_input_ids = torch.cat([bos[:,None],code_prompt_idx[:,0,None],init_codes['input_ids']], dim=-1)
+        init_input_ids = _to_device({'input_ids':init_input_ids}, self.model.device)['input_ids']
+        input_ids = init_input_ids.clone()
+        return {'input_ids':input_ids, 'init_input_ids':init_input_ids, 'num_visit':num_visit, 'init_code':init_code_str}
+
+    def _generation_loop(self, data, inputs):
+        new_record = defaultdict(list)
+        tokenizer = self.data_tokenizer
+        special_token_dict = self.data_tokenizer.special_token_dict
+        sample_gen_kwargs = self.sample_config.copy()
+
+        input_ids_list = []
+        num_visit_code_list = []
+        first_code_flag = True
+
+        input_ids = inputs['input_ids']
+        for visit in range(inputs['num_visit']):
+            this_visit_ids_list = []
+            for code in self.config['code_type']:
+                target_list = data[code][visit]
+                sample_gen_kwargs['code_type'] = code
+                num_code = len(target_list)
+                if num_code > 20:
+                    num_code = min(num_code, 20)
+                    target_list = np.random.choice(target_list, num_code, replace=False).tolist()
+
+                # random select part of codes from target list
+                target_ar = np.array(target_list)
+                sub_code = target_ar[np.random.binomial(1, 0.5, num_code).astype(bool)]
+                code_prompt_idx = [special_token_dict[code][0]] + sub_code.tolist() + [special_token_dict[code][1]]
+                code_prompt_idx = tokenizer.encode(code_prompt_idx, add_special_tokens=False, return_tensors='pt')
+                code_prompt_idx = code_prompt_idx.to(self.model.device)
+
+                if num_code == 0:
+                    if first_code_flag:
+                        new_next_tokens = code_prompt_idx[:,-1,None]
+                        first_code_flag = False
+                    else:
+                        new_next_tokens = code_prompt_idx
+
+                    this_visit_ids_list.append(new_next_tokens)
+                    input_ids = torch.cat([input_ids, new_next_tokens], dim=-1)
+                    new_record[code].append([])
+                
+                else:
+                    sample_gen_kwargs['max_length'] = num_code+2
+                    # sample_gen_kwargs['x_cat'] = data['x_cat']
+                    # sample_gen_kwargs['x_num'] = data['x_num']
+
+                    new_next_tokens = self.model.generate(input_ids, **sample_gen_kwargs)
+
+                    # randomly pick / rm sub code overlap
+                    new_next_tokens = new_next_tokens[:,1:-1]
+                    new_next_tokens = np.setdiff1d(new_next_tokens[0].cpu(), code_prompt_idx[0].cpu())
+                    if num_code-len(sub_code) > len(new_next_tokens):
+                        new_sub_idxs = np.unique(np.random.choice(np.arange(len(new_next_tokens)), num_code-len(sub_code), replace=True))
+                    else:
+                        new_sub_idxs = np.unique(np.random.choice(np.arange(len(new_next_tokens)), num_code-len(sub_code), replace=False))
+                    new_next_tokens = torch.tensor(new_next_tokens[None, new_sub_idxs]).to(code_prompt_idx.device)
+
+                    # append to the synthetic record dict
+                    code_str_list = tokenizer.batch_decode(new_next_tokens)[0]
+                    code_str_list = code_str_list.split()
+                    new_record[code].append(code_str_list+sub_code.tolist())
+
+                    if first_code_flag:
+                        new_next_tokens = torch.cat([new_next_tokens, code_prompt_idx[:,1:]], dim=-1)
+                        first_code_flag = False
+                    else:
+                        # cover by modality prompt
+                        new_next_tokens = torch.cat([code_prompt_idx[:,:-1], new_next_tokens, code_prompt_idx[:,-1,None]], dim=-1)
+
+                    if visit > 1:
+                        # check input length
+                        cur_len = input_ids.shape[1] + new_next_tokens.shape[1]
+                        while cur_len >= tokenizer.model_max_length:
+                            print(f'{cur_len} reach model max length {tokenizer.model_max_length}, do cut.')
+                            input_ids_list = input_ids_list[1:]
+                            num_visit_code_list = num_visit_code_list[1:]
+                            input_ids = torch.cat(input_ids_list,dim=-1)
+                            cur_len = input_ids.shape[1] + new_next_tokens.shape[1]
+
+                    # concat
+                    this_visit_ids_list.append(new_next_tokens)
+                    input_ids = torch.cat([input_ids, new_next_tokens], dim=-1)
+
+            # after one visit, add eos token id
+            eos = torch.tensor([tokenizer.eos_token_id], device=self.model.device)
+            input_ids = torch.cat([input_ids, eos[:,None]], dim=-1)
+            this_visit_ids = torch.cat(this_visit_ids_list, dim=-1)
+            this_visit_ids = torch.cat([this_visit_ids, eos[:,None]], dim=-1)
+            if visit == 0: this_visit_ids = torch.cat([inputs['init_input_ids'], this_visit_ids], dim=-1)
+            num_visit_code_list.append(this_visit_ids.shape[-1])
+            input_ids_list.append(this_visit_ids)
+
+        # add init code
+        new_record[self.config['code_type'][0]][0] += inputs['init_code']
+        pdb.set_trace()
+        print(new_record)
+        return new_record
 
 
 def make_dir_if_not_exist(path):

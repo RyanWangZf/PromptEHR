@@ -26,8 +26,6 @@ import torch
 from torch import nn
 import torch.distributed as dist
 
-from . import constants
-
 logger = logging.get_logger(__name__)
 
 class EHRGenerationMixin(GenerationMixin):
@@ -71,6 +69,8 @@ class EHRGenerationMixin(GenerationMixin):
         num_beam_groups: Optional[int] = None,
         diversity_penalty: Optional[float] = None,
         prefix_allowed_tokens_fn: Optional[Callable[[int, torch.Tensor], List[int]]] = None,
+        logits_processor: Optional[LogitsProcessorList] = LogitsProcessorList(),
+        renormalize_logits: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
@@ -79,14 +79,12 @@ class EHRGenerationMixin(GenerationMixin):
         forced_eos_token_id: Optional[int] = None,
         remove_invalid_values: Optional[bool] = None,
         synced_gpus: Optional[bool] = None,
-        code_type: Optional[str] = 'diagnosis',
+        exponential_decay_length_penalty: Optional[Tuple[Union[int, float]]] = None,
+        code_type: Optional[str] = 'diag',
         **model_kwargs,
     ) -> Union[GreedySearchOutput, SampleOutput, BeamSearchOutput, BeamSampleOutput, torch.LongTensor]:
         r'''an adaptation of generate function implemented in transformers.generation_utils.
         '''
-
-        assert code_type in constants.CODE_TYPES
-
         num_beams = num_beams if num_beams is not None else self.config.num_beams
         num_beam_groups = num_beam_groups if num_beam_groups is not None else self.config.num_beam_groups
         do_sample = do_sample if do_sample is not None else self.config.do_sample
@@ -138,16 +136,17 @@ class EHRGenerationMixin(GenerationMixin):
                 input_ids = model_kwargs.pop("decoder_input_ids")
             else:
                 input_ids = self._prepare_decoder_input_ids_for_generation(
-                    input_ids, decoder_start_token_id=decoder_start_token_id, bos_token_id=bos_token_id
+                    batch_size=1, decoder_start_token_id=decoder_start_token_id, bos_token_id=bos_token_id
                 )
 
             if "encoder_outputs" not in model_kwargs or not isinstance(model_kwargs["encoder_outputs"], ModelOutput):
                 raise ValueError("Make sure that `model_kwargs` include `encoder_outputs` of type `ModelOutput`.")
 
         # if `max_new_tokens` is passed, but not `max_length` -> set `max_length = max_new_tokens`
+        input_ids_seq_length = input_ids.shape[-1]
         if max_length is None and max_new_tokens is not None:
             max_length = (
-                max_new_tokens + input_ids.shape[-1]
+                max_new_tokens + input_ids_seq_length
                 if input_ids is not None
                 else max_length + model_kwargs["inputs_embeds"].shape[1]
             )
@@ -188,6 +187,7 @@ class EHRGenerationMixin(GenerationMixin):
 
         # get distribution pre_processing samplers
         logits_processor = self._get_logits_processor(
+            input_ids_seq_length=input_ids_seq_length,
             repetition_penalty=repetition_penalty,
             no_repeat_ngram_size=no_repeat_ngram_size,
             encoder_no_repeat_ngram_size=encoder_no_repeat_ngram_size,
@@ -203,6 +203,9 @@ class EHRGenerationMixin(GenerationMixin):
             num_beam_groups=num_beam_groups,
             diversity_penalty=diversity_penalty,
             remove_invalid_values=remove_invalid_values,
+            exponential_decay_length_penalty=exponential_decay_length_penalty,
+            logits_processor=logits_processor,
+            renormalize_logits=renormalize_logits,
         )
 
         stopping_criteria = self._get_stopping_criteria(max_length=max_length, max_time=max_time)
@@ -1203,8 +1206,8 @@ class EHRGenerationMixin(GenerationMixin):
                 next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
 
             # update generated ids, model inputs, and length for next step
-            new_next_tokens = next_tokens.cpu().numpy()+self.ehr_tokenizer_dict.label_offset
-            new_next_tokens_str = self.ehr_tokenizer_dict.tokenizer_dict[code_type].decode(new_next_tokens)
+            new_next_tokens = next_tokens.cpu().numpy()+self.model_tokenizer.label_offset
+            new_next_tokens_str = self.model_tokenizer.tokenizer_dict[code_type].decode(new_next_tokens)
             new_next_tokens = new_next_tokens_str.split()
             new_next_tokens = np.array(new_next_tokens).astype(int)
             new_next_tokens = torch.tensor(new_next_tokens).to(next_tokens.device)
