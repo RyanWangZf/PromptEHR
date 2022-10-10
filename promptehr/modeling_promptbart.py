@@ -38,7 +38,7 @@ class NumericalConditionalPrompt(nn.Module):
     def __init__(self, n_feature, d_model, d_hidden) -> None:
         super().__init__()
         self.weight = nn.init.xavier_uniform_(nn.Parameter(Tensor(n_feature, d_hidden)))
-        self.bias = nn.Parameter(Tensor(n_feature, d_hidden))
+        self.bias = nn.init.xavier_uniform_(nn.Parameter(Tensor(n_feature, d_hidden)))
         self.proj = nn.Linear(d_hidden, d_model, bias=False)
 
     def forward(self, x):
@@ -67,7 +67,7 @@ class CategoricalConditionalPrompt(nn.Module):
         category_offsets = torch.tensor([0] + cardinalities[:-1]).cumsum(0)
         self.register_buffer('category_offsets', category_offsets, persistent=False)
         self.embeddings = nn.Embedding(sum(cardinalities), d_hidden)
-        self.bias = nn.Parameter(Tensor(len(cardinalities),d_hidden))
+        self.bias = nn.init.xavier_uniform_(nn.Parameter(Tensor(len(cardinalities),d_hidden)))
         self.proj = nn.Linear(d_hidden, d_model, bias=False)
 
     def forward(self, x):

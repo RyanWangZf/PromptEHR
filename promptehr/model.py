@@ -1,3 +1,4 @@
+from cmath import isnan
 import pdb
 import warnings
 
@@ -21,7 +22,6 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
         config.is_decoder = False
         config.is_encoder_decoder = True # use both the inputs for encoders and decoders
 
-        # self.model = PromptBartModel(config).from_pretrained('facebook/bart-base')
         self.model = PromptBartModel(config)
 
         self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
@@ -88,7 +88,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
         # the model will shift input_ids to get the decoder input ids during forward
         outputs = self.model(
             input_ids,
-            attention_mask=attention_mask,
+            attention_mask=attention_mask, # 0 for"masked", 1 for "Not masked"
             decoder_input_ids=decoder_input_ids,
             x_num=x_num,
             x_cat=x_cat,
@@ -116,6 +116,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             encoded_labels = encoded_labels - self.model_tokenizer.label_offset
             encoded_labels[encoded_labels < 0] = -100 # ignore special tokens when computing losses
 
+            # 50508, 51324,51461, 50597, 50918
             if x_num is not None or x_cat is not None:
                 # adjust label mask if context conditional prompt is used
                 n_num = x_num.shape[1] if x_num is not None else 0
@@ -131,6 +132,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
 
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
             loss = loss_fct(logits.view(-1, self.lm_head[code_type].out_features), encoded_labels.view(-1))
+            
 
             if label_mask is not None: # do evaluation, compute perplexity
                 if encoded_labels[encoded_labels > 0].shape[0] == 0:
@@ -138,13 +140,15 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
                 else:
                     target = encoded_labels[label_mask.bool()]
                     mask_logits = logits[label_mask.bool()]
-                    # debug
+
+                    # debug: move to CPU see errors
                     # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
+                    
                     prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
                     nll = -torch.log(prob+constants.eps)
                     perplexity = nll.exp()
                     if torch.isnan(perplexity).any():
-                        warnings.warn('Find NaN perplexity during the forward of EHRBART model!')
+                        warnings.warn('Find NaN perplexity during the forward of PromptEHR model!')
 
         if not return_dict:
             output = (logits,) + outputs[1:]

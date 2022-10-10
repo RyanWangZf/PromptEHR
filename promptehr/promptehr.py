@@ -88,7 +88,7 @@ class PromptEHR(nn.Module):
         cat_cardinalities,
         epoch=50,
         batch_size=16,
-        eval_batch_size=64,
+        eval_batch_size=16,
         eval_step=1000,
         learning_rate=1e-5,
         weight_decay=1e-4,
@@ -99,7 +99,7 @@ class PromptEHR(nn.Module):
         super().__init__()
         self.data_tokenizer = DataTokenizer.from_pretrained('facebook/bart-base')
         # will extend vocab after pass training data
-        self.data_tokenizer.update_config(code_types=code_type)
+        self.data_tokenizer.update_special_token_config(code_types=code_type)
         self.model_tokenizer = None
         self.config = {
             'code_type': code_type,
@@ -126,6 +126,7 @@ class PromptEHR(nn.Module):
             save_steps=eval_step,
             eval_steps=eval_step,
             warmup_ratio=0.06,
+            max_grad_norm=0.5,
             save_total_limit=5,
             logging_steps=eval_step,
             dataloader_num_workers=num_worker, # debug
@@ -432,11 +433,12 @@ class PromptEHR(nn.Module):
         for batch in dataloader:
             for k,v in batch.items():
                 unq_codes = list(set(v))
-                self.data_tokenizer.add_tokens(unq_codes)
-                self.data_tokenizer.code_vocab[k] = np.array(unq_codes)
+                self.data_tokenizer.add_token_to_code_vocab(unq_codes, k)
         
         self.model_tokenizer = ModelTokenizer(self.data_tokenizer)
         self.configuration = EHRBartConfig(self.data_tokenizer, self.model_tokenizer, n_num_feature=self.config['n_num_feature'], cat_cardinalities=self.config['cat_cardinalities'])
+        # self.data_tokenizer.decode([50508, 51324,51461, 50597, 50918,]) 
+
 
     def _build_model(self):
         self.model = BartForEHRSimulation(self.configuration, self.model_tokenizer)
