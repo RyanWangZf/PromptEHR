@@ -11,8 +11,6 @@ from promptehr.modeling_config import EHRBartConfig, DataTokenizer, ModelTokeniz
 from promptehr.trainer import PromptEHRTrainer
 from promptehr.model import BartForEHRSimulation
 
-
-
 # set visible device
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 

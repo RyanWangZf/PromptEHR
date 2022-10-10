@@ -168,19 +168,22 @@ class MimicDataCollator:
                     # translate span to code_span
                     span = self._process_span(span, code)
 
-                    span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
+                    span_str = self._pad_special_token_head_tail(' '.join(span), code)
                     span_label_str_list.append(span_str)
                     num_token_this_adm += len(span) + 2
 
                     if code == code_type:
                         # do mask infilling / mask
                         infill_span, _, _ = self.mask_infill([span])
-                        span_str = self.__special_token_dict__[code][0] + ' '.join(infill_span[0]) + self.__special_token_dict__[code][1]
+                        span_str = self._pad_special_token_head_tail(' '.join(infill_span[0]), code) 
                         span_str_list.append(span_str)
                     else:
-                        if self.__del_or_rep__[random.randint(0,1)] == 'rep': rep_del_span = self.rep_token([span], code)
-                        else: rep_del_span = self.del_token([span])
-                        span_str = self.__special_token_dict__[code][0] + ' '.join(rep_del_span[0]) + self.__special_token_dict__[code][1]
+                        if self.__del_or_rep__[random.randint(0,1)] == 'rep': 
+                            rep_del_span = self.rep_token([span], code)
+                        else: 
+                            rep_del_span = self.del_token([span])
+
+                        span_str = self._pad_special_token_head_tail(' '.join(rep_del_span[0]), code) 
                         span_str_list.append(span_str)
 
                 span_str_list.append('</s>')
@@ -205,12 +208,6 @@ class MimicDataCollator:
                 batch['input_strs'].append(input_strs)
                 batch['label_strs'].append(label_strs)
 
-                # inputs = self.tokenizer([' '.join(input_str_all) + span_str_this_adm, ' '.join(label_str_all) + span_label_str_this_adm],
-                #     padding='max_length', add_special_tokens=False, return_tensors='pt')
-                # batch['input_ids'].append(inputs['input_ids'][0].unsqueeze(0))
-                # batch['attention_mask'].append(inputs['attention_mask'][0].unsqueeze(0))
-                # batch['labels'].append(inputs['input_ids'][0].unsqueeze(0))
-
                 input_str_all.append(span_str_this_adm)
                 label_str_all.append(span_label_str_this_adm)
                 num_token_all.append(num_token_this_adm)
@@ -234,8 +231,8 @@ class MimicDataCollator:
                     next_span = self._process_span(next_span, code)
 
                     # do next span prediction
-                    label_str = self.__special_token_dict__[code_type][0] + ' '.join(next_span) + self.__special_token_dict__[code_type][1]
-                    input_str = self.__special_token_dict__[code_type][0] + '<mask>' + self.__special_token_dict__[code_type][1]
+                    label_str = self._pad_special_token_head_tail(' '.join(next_span), code_type)
+                    input_str = self._pad_special_token_head_tail('<mask>', code_type)
 
                     num_token_all, input_str_all, label_str_all = \
                         self._check_max_length(len(next_span)+2, num_token_all, input_str_all, label_str_all)
@@ -318,26 +315,26 @@ class MimicDataCollator:
                     span = self._process_span(span, code)
 
                     num_token_this_adm += len(span) + 2
-                    span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
+                    span_str = self._pad_special_token_head_tail(' '.join(span), code) 
                     span_label_str_list.append(span_str)
 
                     if code == eval_code_type and num_adm == 1:
                         # do mask infilling / mask if there is only one admission of the patient
                         infill_span, label_span, label_mask_span = self.mask_infill([span])
-                        span_str = self.__special_token_dict__[code][0] + ' '.join(infill_span[0]) + self.__special_token_dict__[code][1]
+                        span_str = self._pad_special_token_head_tail(' '.join(infill_span[0]), code)
                         span_str_list.append(span_str)
-                        label_mask_list += [0] + label_mask_span[0] + [0]
+                        label_mask_list += self._pad_label_mask_head_tail(label_mask_span[0]) # add pad token at the head and tail of the label mask
 
                     else:
                         # do not change anything for not targeted codes
-                        span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
+                        span_str = self._pad_special_token_head_tail(' '.join(span), code)
                         span_str_list.append(span_str)
-                        label_mask_list += np.zeros(len(span)+2, dtype=int).tolist()
+                        label_mask_list += [0] * (len(span)+2) # all masked and the head tail added with zeros
 
                 span_str_list.append('</s>')
                 span_label_str_list.append('</s>')
-                num_token_this_adm += 1
                 label_mask_list =  label_mask_list + [0]
+                num_token_this_adm += 1
 
                 if adm == 0: # the first visit starts from bos token
                     span_str_list = ['<s>'] + span_str_list
@@ -378,16 +375,15 @@ class MimicDataCollator:
                         continue # empty modality
 
                     # do next span prediction
-                    label_str = self.__special_token_dict__[eval_code_type][0] + ' '.join(next_span) + self.__special_token_dict__[eval_code_type][1]
-                    input_str = self.__special_token_dict__[eval_code_type][0] + '<mask>' + self.__special_token_dict__[eval_code_type][1]
+                    label_str = self._pad_special_token_head_tail(' '.join(next_span), eval_code_type)
+                    input_str = self._pad_special_token_head_tail('<mask>', eval_code_type)
 
                     num_token_all, input_str_all, label_str_all, label_mask_list_all = \
                         self._check_max_length(len(next_span)+2, num_token_all, input_str_all, label_str_all, label_mask_list_all)
 
                     batch['input_strs'].append(' '.join(input_str_all)+input_str)
                     batch['label_strs'].append(' '.join(label_str_all)+label_str)
-
-                    label_mask = sum(label_mask_list_all,[]) + [0] + np.ones(len(next_span), dtype=int).tolist() + [0]
+                    label_mask = sum(label_mask_list_all,[]) + [0] + [1] * len(next_span) + [0]
                     batch['label_mask'].append(torch.tensor(label_mask))
 
                     if 'x_num' in sample:
@@ -409,12 +405,21 @@ class MimicDataCollator:
         # process all strs inputs at last
         n_batch = len(batch['input_strs'])
         batch_all_inputs = self.tokenizer(batch.pop('input_strs') + batch.pop('label_strs'), padding=True, add_special_tokens=False, return_tensors='pt')
+        
         batch['input_ids'] = batch_all_inputs['input_ids'][:n_batch]
         batch['attention_mask'] = batch_all_inputs['attention_mask'][:n_batch]
-        batch['labels'] = batch_all_inputs['input_ids'][n_batch:]
 
+        batch['labels'] = batch_all_inputs['input_ids'][n_batch:]
+        
         # pad all label mask and concat
         batch['label_mask'] = pad_sequence(batch['label_mask'], batch_first=True, padding_value=0)
+
+        # debug: check label mask
+        # for i in range(n_batch):
+        #     label = batch['labels'][i]
+        #     mask = batch['label_mask'][i]
+        #     print(self.tokenizer.decode(label[mask==1]))
+
         return batch
 
     def call_test(self, samples: List[InputDataClass]) -> Dict[str, Any]:
@@ -457,20 +462,20 @@ class MimicDataCollator:
                     span = self._process_span(span, code)
 
                     num_token_this_adm += len(span) + 2
-                    span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
+                    span_str = self._pad_special_token_head_tail(' '.join(span), code)
                     span_label_str_list.append(span_str)
 
                     if code == eval_code_type and eval_ppl_type == 'spl': # for spatial ppl evaluation
                         # do mask all codes inside this modality
-                        span_str = self.__special_token_dict__[code][0] + '<mask>' + self.__special_token_dict__[code][1]
-                        label_mask_span = np.ones(len(span), dtype=int).tolist()
-                        label_mask_list += [0] + label_mask_span + [0]
+                        span_str = self._pad_special_token_head_tail('<mask>', code)
+                        label_mask_span = [1] * len(span)
+                        label_mask_list += self._pad_label_mask_head_tail(label_mask_span)
                         span_str_list.append(span_str)
                     else:
                         # do not change anything for not targeted codes
-                        span_str = self.__special_token_dict__[code][0] + ' '.join(span) + self.__special_token_dict__[code][1]
+                        span_str = self._pad_special_token_head_tail(' '.join(span), code)
                         span_str_list.append(span_str)
-                        label_mask_list += np.zeros(len(span)+2, dtype=int).tolist()
+                        label_mask_list += [0] * (len(span)+2)
 
                 span_str_list.append('</s>')
                 span_label_str_list.append('</s>')
@@ -522,9 +527,9 @@ class MimicDataCollator:
                         continue # empty modality
 
                     # do next span prediction
-                    label_str = self.__special_token_dict__[eval_code_type][0] + ' '.join(next_span) + self.__special_token_dict__[eval_code_type][1]
-                    input_str = self.__special_token_dict__[eval_code_type][0] + '<mask>' + self.__special_token_dict__[eval_code_type][1]
-
+                    label_str = self._pad_special_token_head_tail(' '.join(next_span), eval_code_type)
+                    input_str = self._pad_special_token_head_tail('<mask>', eval_code_type)
+                    
                     num_token_all, input_str_all, label_str_all, label_mask_list_all = \
                         self._check_max_length(len(next_span)+2, num_token_all, input_str_all, label_str_all, label_mask_list_all)
 
@@ -640,6 +645,13 @@ class MimicDataCollator:
         assert ppl_type in ['tpl', 'spl'] # temporal or spatial perplexity measure
         print(f'evaluation for {ppl_type} perplexity.')
         self.eval_ppl_type = ppl_type
+
+    def _pad_label_mask_head_tail(self, label_mask_span):
+        return [0] + label_mask_span + [0]
+
+    def _pad_special_token_head_tail(self, span, code):
+        span_str = self.__special_token_dict__[code][0] + ' ' + span + ' ' + self.__special_token_dict__[code][1]
+        return span_str
 
     def _pad_max_length(self, x:List, fill:int=0):
         '''fill label mask

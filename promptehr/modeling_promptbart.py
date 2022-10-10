@@ -12,13 +12,6 @@ import torch
 from torch import nn
 from torch import Tensor
 
-from .modeling_config import DataTokenizer, ModelTokenizer
-from .modeling_config import EHRBartConfig
-from .modeling_config import EHRBartOutput
-from .generator import EHRGenerationMixin
-from . import constants
-
-
 def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
     """
     Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
@@ -44,8 +37,8 @@ class NumericalConditionalPrompt(nn.Module):
     '''
     def __init__(self, n_feature, d_model, d_hidden) -> None:
         super().__init__()
-        self.weight = nn.Parameter(Tensor(n_feature, d_hidden))
-        self.bias = nn.Parameter(Tensor(n_feature, d_hidden))
+        self.weight = nn.init.xavier_uniform_(nn.Parameter(Tensor(n_feature, d_hidden)))
+        self.bias = nn.init.xavier_uniform_(nn.Parameter(Tensor(n_feature, d_hidden)))
         self.proj = nn.Linear(d_hidden, d_model, bias=False)
 
     def forward(self, x):
@@ -74,7 +67,7 @@ class CategoricalConditionalPrompt(nn.Module):
         category_offsets = torch.tensor([0] + cardinalities[:-1]).cumsum(0)
         self.register_buffer('category_offsets', category_offsets, persistent=False)
         self.embeddings = nn.Embedding(sum(cardinalities), d_hidden)
-        self.bias = nn.Parameter(Tensor(len(cardinalities),d_hidden))
+        self.bias = nn.init.xavier_uniform_(nn.Parameter(Tensor(len(cardinalities),d_hidden)))
         self.proj = nn.Linear(d_hidden, d_model, bias=False)
 
     def forward(self, x):
@@ -269,6 +262,7 @@ class PromptBartDecoder(BartDecoder):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        **kwargs,
         ):
         '''Make forward pass by the decoder.
 
@@ -381,8 +375,7 @@ class PromptBartDecoder(BartDecoder):
                     cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None,
                     None,
                 )
-            else:
-
+            else: # testing/generating                
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=attention_mask,
@@ -529,7 +522,7 @@ class PromptBartModel(BartModel):
             decoder_prompt_embeds = self.decoder_conditional_prompt(x_num=x_num, x_cat=x_cat)
         else:
             decoder_prompt_embeds = None
-
+        
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
             attention_mask=decoder_attention_mask,
@@ -559,3 +552,4 @@ class PromptBartModel(BartModel):
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
         )
+

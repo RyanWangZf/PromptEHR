@@ -19,11 +19,11 @@ class Evaluator:
         mimic_val_collator.set_eval_ppl_type(ppl_type)
         dataloader = DataLoader(mimic_val_dataset,
             batch_size=eval_batch_size,
-            num_workers=8,
+            num_workers=0,
             drop_last=False,
             collate_fn=mimic_val_collator,
             shuffle=False,
-            pin_memory=True)
+            pin_memory=False)
 
         ppl_list = []
         for batch in dataloader:

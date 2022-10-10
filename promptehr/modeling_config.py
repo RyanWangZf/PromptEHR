@@ -36,11 +36,21 @@ class DataTokenizer(BartTokenizer):
     '''
     new_token_type_list = constants.CODE_TYPES
     special_token_dict = constants.SPECIAL_TOKEN_DICT
-    code_vocab = dict().fromkeys(new_token_type_list)
+    code_vocab = defaultdict(list)
 
-    def update_config(self, code_types):
+    def add_token_to_code_vocab(self, tokens, code):
+        self.add_tokens(tokens)
+
+        if code not in self.code_vocab:
+            self.code_vocab[code] = np.array(tokens)
+        else:
+            origin_tokens = self.code_vocab[code]
+            new_tokens = np.array(tokens)
+            self.code_vocab[code] = np.unique(np.concatenate([origin_tokens, new_tokens]))
+
+    def update_special_token_config(self, code_types):
         self.new_token_type_list = code_types
-        self.code_vocab = dict().fromkeys(code_types)
+        self.code_vocab = defaultdict(list)
         self.special_token_dict = {}
         special_token_list = []
         for code_type in code_types:
@@ -85,13 +95,18 @@ class ModelTokenizer:
             vocab = defaultdict(int)
             vocab[constants.UNKNOWN_TOKEN] = 0
             for i,token in enumerate(tokenizer.special_token_dict[key]):
-                vocab[map_token(token)] = i+1
+                vocab[str(org_vocab[token])] = i+1
             offset = len(vocab)
-            for i, token in enumerate(value):
-                vocab[str(org_vocab[token])] = offset+i
+
+            for i, token in enumerate(value): # str token = 'diag_xxx' 
+                _, index = token.split('_')
+                vocab[str(org_vocab[token])] = int(index) + offset
+            
+            # new tokenizer
             specific_tokenizer = Tokenizer(WordLevel(vocab=vocab, unk_token=constants.UNKNOWN_TOKEN))
             specific_tokenizer.pre_tokenizer = Whitespace()
-            num_token_dict[key] = len(vocab) - offset # special tokens should not be counted
+            # num_token_dict is decided by the max index instead of number of tokens
+            num_token_dict[key] = max(vocab.values()) - offset
             tokenizer_dict[key] = specific_tokenizer
 
         # each code type has its own tokenizer corresponding to specific LM heads
@@ -111,17 +126,6 @@ class ModelTokenizer:
         ids_list = self.tokenizer_dict[code_type].encode_batch(input_ids.cpu().numpy().astype(str).tolist(), is_pretokenized=True)
         ids = torch.tensor([x.ids for x in ids_list], device=input_ids.device)
         return ids
-
-    def save(self, output_dir):
-        for key,value in self.tokenizer_dict.items():
-            out_file = os.path.join(output_dir, f'{key}_vocab.json')
-            with open(out_file, 'w', encoding='utf-8') as f:
-                # TODO: get tokenizer vocabulary and save
-                pdb.set_trace()
-                vocab = value.vocab
-                f.write(
-                    json.dumps(vocab)
-                )
 
     @property
     def get_num_tokens(self):

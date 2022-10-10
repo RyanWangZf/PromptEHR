@@ -1,3 +1,4 @@
+from cmath import isnan
 import pdb
 import warnings
 
@@ -21,7 +22,6 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
         config.is_decoder = False
         config.is_encoder_decoder = True # use both the inputs for encoders and decoders
 
-        # self.model = PromptBartModel(config).from_pretrained('facebook/bart-base')
         self.model = PromptBartModel(config)
 
         self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
@@ -82,13 +82,13 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
                 decoder_input_ids = shift_tokens_right(
                     labels, self.config.pad_token_id, self.config.decoder_start_token_id,
                 )
-
+        
         # get the outputs from both encoder and decoder of BartModel
         # if only input_ids are given and no decoder_input_ids is given
         # the model will shift input_ids to get the decoder input ids during forward
         outputs = self.model(
             input_ids,
-            attention_mask=attention_mask,
+            attention_mask=attention_mask, # 0 for"masked", 1 for "Not masked"
             decoder_input_ids=decoder_input_ids,
             x_num=x_num,
             x_cat=x_cat,
@@ -116,6 +116,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             encoded_labels = encoded_labels - self.model_tokenizer.label_offset
             encoded_labels[encoded_labels < 0] = -100 # ignore special tokens when computing losses
 
+            # 50508, 51324,51461, 50597, 50918
             if x_num is not None or x_cat is not None:
                 # adjust label mask if context conditional prompt is used
                 n_num = x_num.shape[1] if x_num is not None else 0
@@ -131,6 +132,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
 
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
             loss = loss_fct(logits.view(-1, self.lm_head[code_type].out_features), encoded_labels.view(-1))
+            
 
             if label_mask is not None: # do evaluation, compute perplexity
                 if encoded_labels[encoded_labels > 0].shape[0] == 0:
@@ -138,13 +140,15 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
                 else:
                     target = encoded_labels[label_mask.bool()]
                     mask_logits = logits[label_mask.bool()]
-                    # debug
+
+                    # debug: move to CPU see errors
                     # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
+                    
                     prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
                     nll = -torch.log(prob+constants.eps)
                     perplexity = nll.exp()
                     if torch.isnan(perplexity).any():
-                        warnings.warn('Find NaN perplexity during the forward of EHRBART model!')
+                        warnings.warn('Find NaN perplexity during the forward of PromptEHR model!')
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -188,8 +192,8 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
         # cut decoder_input_ids if past is used
         if past is not None:
             decoder_input_ids = decoder_input_ids[:, -1:]
-
-        return {
+        
+        return_res = {
             "input_ids": None,  # encoder_outputs is defined. input_ids not needed
             "encoder_outputs": encoder_outputs,
             "past_key_values": past,
@@ -200,6 +204,11 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             "cross_attn_head_mask": cross_attn_head_mask,
             "use_cache": use_cache,  # change this to avoid caching (presumably for debugging)
         }
+
+        if 'x_cat' in kwargs: return_res['x_cat'] = kwargs['x_cat']
+        if 'x_num' in kwargs: return_res['x_num'] = kwargs['x_num']
+
+        return return_res
 
     def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
         return shift_tokens_right(labels, self.config.pad_token_id, self.config.decoder_start_token_id)
@@ -229,3 +238,9 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
 
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
+
+    def get_prompt_encoder(self):
+        return self.model.encoder_conditional_prompt
+    
+    def get_prompt_decoder(self):
+        return self.model.decoder_conditional_prompt
