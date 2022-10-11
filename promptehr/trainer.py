@@ -61,15 +61,14 @@ class PromptEHRTrainer(Trainer):
             raise ValueError("Trainer: evaluation requires an eval_dataset.")
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
         self.val_data_collator.set_eval_code_type(code_type) # set evaluation for this code
-        eval_sampler = self._get_eval_sampler(eval_dataset)
         return DataLoader(
             eval_dataset,
-            sampler=eval_sampler,
             batch_size=self.args.eval_batch_size,
             collate_fn=self.val_data_collator,
-            drop_last=False,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=self.args.dataloader_pin_memory,
+            shuffle=False,
+            drop_last=False,
         )
 
     def evaluate(
@@ -102,6 +101,9 @@ class PromptEHRTrainer(Trainer):
             A dictionary containing the evaluation loss and the potential metrics computed from the predictions. The
             dictionary also contains the epoch number which comes from the training state.
         """
+        # set evaluation mode
+        self.model.eval()
+
         # memory metrics - must set up as early as possible
         self._memory_tracker.start()
         eval_loop = self.evaluation_loop
@@ -125,6 +127,10 @@ class PromptEHRTrainer(Trainer):
         self.log(output.metrics)
         self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
         self._memory_tracker.stop_and_update_metrics(output.metrics)
+
+        # set training mode
+        self.model.train()
+        
         return output.metrics
 
     def evaluation_loop(

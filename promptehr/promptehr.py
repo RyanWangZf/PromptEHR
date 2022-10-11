@@ -291,6 +291,7 @@ class PromptEHR(nn.Module):
             Standard sequential patient records in `PatientSequence` format.
         '''
         self.model.eval()
+        self.eval()
 
         collator = MimicDataCollator(
             self.data_tokenizer,
@@ -331,11 +332,7 @@ class PromptEHR(nn.Module):
         self.load_model(input_dir)
         
     def _save_config(self, config, output_dir=None):        
-        temp_path = os.path.join(output_dir, 'model_config.json')
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
+        temp_path = os.path.join(output_dir, 'promptehr_config.json')
         with open(temp_path, 'w', encoding='utf-8') as f:
             f.write(
                 json.dumps(config, indent=4)
@@ -343,18 +340,10 @@ class PromptEHR(nn.Module):
 
         # save the data tokenizer and model tokenizer of the model
         temp_path = os.path.join(output_dir, 'data_tokenizer.pkl')
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
         with open(temp_path, 'wb') as f:
             dill.dump(self.data_tokenizer, f)
 
         temp_path = os.path.join(output_dir, 'model_tokenizer.pkl')
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
         with open(temp_path, 'wb') as f:
             dill.dump(self.model_tokenizer, f)
 
@@ -410,8 +399,7 @@ class PromptEHR(nn.Module):
         elif is_best:
             filepath = os.path.join(output_dir, 'best.' + filename)
         else:
-            filepath = os.path.join(self.checkout_dir,
-                                    str(epoch_id) + '.' + filename)
+            filepath = os.path.join(output_dir, str(epoch_id) + '.' + filename)
         
         # save statedict
         state_dict = self.state_dict()
@@ -722,7 +710,7 @@ def check_model_config_file(input_dir):
         return None
 
     # find model_config.json under this input_dir
-    model_config_name = [config for config in ckpt_list if 'model_config.json' in config]
+    model_config_name = [config for config in ckpt_list if 'promptehr_config.json' in config]
     if len(model_config_name) == 1:
         return model_config_name[0]
 
