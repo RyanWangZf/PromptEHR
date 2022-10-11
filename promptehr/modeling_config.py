@@ -87,7 +87,7 @@ class ModelTokenizer:
     r'''construct an EHR tokenizer that converts tokenized indices to code-specific token indices.
     '''
     def __init__(self, tokenizer: DataTokenizer):
-        map_token = lambda x: str(tokenizer(x).input_ids[1])
+        # map_token = lambda x: str(tokenizer(x).input_ids[1])
         org_vocab = tokenizer.get_vocab()
         tokenizer_dict = {}
         num_token_dict = {}
@@ -106,7 +106,7 @@ class ModelTokenizer:
             specific_tokenizer = Tokenizer(WordLevel(vocab=vocab, unk_token=constants.UNKNOWN_TOKEN))
             specific_tokenizer.pre_tokenizer = Whitespace()
             # num_token_dict is decided by the max index instead of number of tokens
-            num_token_dict[key] = max(vocab.values()) - offset
+            num_token_dict[key] = (max(vocab.values())+1) - offset
             tokenizer_dict[key] = specific_tokenizer
 
         # each code type has its own tokenizer corresponding to specific LM heads
@@ -124,6 +124,7 @@ class ModelTokenizer:
 
     def encode_batch(self, input_ids, code_type):
         ids_list = self.tokenizer_dict[code_type].encode_batch(input_ids.cpu().numpy().astype(str).tolist(), is_pretokenized=True)
+
         ids = torch.tensor([x.ids for x in ids_list], device=input_ids.device)
         return ids
 
