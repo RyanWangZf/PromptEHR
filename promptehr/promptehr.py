@@ -22,6 +22,7 @@ from .modeling_config import EHRBartConfig, DataTokenizer, ModelTokenizer
 from .trainer import PromptEHRTrainer
 from .evaluator import Evaluator
 from .model import BartForEHRSimulation
+from . import constants
 
 class PromptEHR(nn.Module):
     '''
@@ -291,10 +292,13 @@ class PromptEHR(nn.Module):
         '''
         self.model.eval()
 
-        collator = MimicDataCollator(self.data_tokenizer, 
+        collator = MimicDataCollator(
+            self.data_tokenizer,
             code_types=self.config['code_type'],
             n_num_feature=self.config['n_num_feature'],
-            mode='test', drop_feature=False)
+            mode='test', 
+            drop_feature=False
+            )
 
         evaluator = Evaluator(
             self.model,
@@ -307,9 +311,25 @@ class PromptEHR(nn.Module):
         ppl_types = ['tpl','spl']
         for code_type in code_types:
             for ppl_type in ppl_types:
-                ppl = evaluator.evaluate(code_type, ppl_type)
+                ppl = evaluator.evaluate(code_type, ppl_type, eval_batch_size=self.config['eval_batch_size'])
                 print(f'code: {code_type}, ppl_type: {ppl_type}, value: {ppl}')
 
+    def from_pretrained(self, input_dir='./simulation/pretrained_promptEHR'):
+        '''
+        Load pretrained PromptEHR model and make patient EHRs generation.
+        Pretrained model was learned from MIMIC-III patient sequence data.
+        '''
+        if input_dir is None or not os.path.exists(input_dir):
+            if input_dir is None:
+                input_dir = './trial_search/pretrained_trial2vec'
+            os.makedirs(input_dir)
+            url = constants.PRETRAINED_MODEL_URL
+            download_pretrained(url, input_dir)
+            print(f'Download pretrained PromptEHR model, save to {input_dir}.')
+        
+        print('Load pretrained PromptEHR model from', input_dir)
+        self.load_model(input_dir)
+        
     def _save_config(self, config, output_dir=None):        
         temp_path = os.path.join(output_dir, 'model_config.json')
 
@@ -641,6 +661,14 @@ class PromptEHR(nn.Module):
         new_record[self.config['code_type'][0]][0] += inputs['init_code']
         return new_record
 
+
+def download_pretrained(url, output_dir):
+    import wget
+    import zipfile
+    filename = wget.download(url=url, out=output_dir)
+    zipf = zipfile.ZipFile(filename, 'r')
+    zipf.extractall(output_dir)
+    zipf.close()
 
 def make_dir_if_not_exist(path):
     if not os.path.exists(path):

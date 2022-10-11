@@ -367,7 +367,7 @@ class PromptEHRTrainer(Trainer):
                 labels = labels[0]
         else:
             labels = None
-
+        
         with torch.no_grad():
             if has_labels:
                 with self.autocast_smart_context_manager():

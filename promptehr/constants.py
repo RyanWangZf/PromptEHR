@@ -17,3 +17,5 @@ UNKNOWN_TOKEN = '<unk>'
 model_max_length = 512
 
 eps = 1e-16
+
+PRETRAINED_MODEL_URL = ''
