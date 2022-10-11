@@ -90,7 +90,7 @@ class PromptEHR(nn.Module):
         batch_size=16,
         eval_batch_size=16,
         eval_step=1000,
-        learning_rate=1e-5,
+        learning_rate=5e-5,
         weight_decay=1e-4,
         num_worker=8,
         output_dir='./promptEHR_logs',

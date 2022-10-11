@@ -1,0 +1,5 @@
+dill
+numpy
+tokenizers
+tqdm
+transformers>4.19.2

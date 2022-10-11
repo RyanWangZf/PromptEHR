@@ -116,7 +116,6 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             encoded_labels = encoded_labels - self.model_tokenizer.label_offset
             encoded_labels[encoded_labels < 0] = -100 # ignore special tokens when computing losses
 
-            # 50508, 51324,51461, 50597, 50918
             if x_num is not None or x_cat is not None:
                 # adjust label mask if context conditional prompt is used
                 n_num = x_num.shape[1] if x_num is not None else 0
@@ -130,25 +129,29 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
                     label_mask_offset = label_mask_offset.to(label_mask.device)
                     label_mask = torch.cat([label_mask_offset, label_mask], dim=1)
 
+            # compute loss
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
             loss = loss_fct(logits.view(-1, self.lm_head[code_type].out_features), encoded_labels.view(-1))
             
-
             if label_mask is not None: # do evaluation, compute perplexity
-                if encoded_labels[encoded_labels > 0].shape[0] == 0:
-                    perplexity = None
-                else:
-                    target = encoded_labels[label_mask.bool()]
-                    mask_logits = logits[label_mask.bool()]
+                try:
+                    if encoded_labels[encoded_labels > 0].shape[0] == 0:
+                        perplexity = None
+                    else:
+                        target = encoded_labels[label_mask.bool()]
+                        mask_logits = logits[label_mask.bool()]
 
-                    # debug: move to CPU see errors
-                    # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
-                    
-                    prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
-                    nll = -torch.log(prob+constants.eps)
-                    perplexity = nll.exp()
-                    if torch.isnan(perplexity).any():
-                        warnings.warn('Find NaN perplexity during the forward of PromptEHR model!')
+                        # debug: move to CPU see errors
+                        # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
+                        
+                        prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
+                        nll = -torch.log(prob+constants.eps)
+                        perplexity = nll.exp()
+                        if torch.isnan(perplexity).any():
+                            warnings.warn('Find NaN perplexity during the forward of PromptEHR model!')
+                except:
+                    pdb.set_trace()
+                    pass
 
         if not return_dict:
             output = (logits,) + outputs[1:]
