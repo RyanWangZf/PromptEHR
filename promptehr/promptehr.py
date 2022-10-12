@@ -325,7 +325,7 @@ class PromptEHR(nn.Module):
         '''
         if input_dir is None or not os.path.exists(input_dir):
             if input_dir is None:
-                input_dir = './trial_search/pretrained_trial2vec'
+                input_dir = './simulation/pretrained_promptEHR'
             os.makedirs(input_dir)
             url = constants.PRETRAINED_MODEL_URL
             download_pretrained(url, input_dir)
