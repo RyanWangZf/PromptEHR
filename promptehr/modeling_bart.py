@@ -23,12 +23,13 @@ def EHRBartConfig(data_tokenizer, model_tokenizer, **kwargs):
     return bart_config
 
 class DataTokenizer(BartTokenizer):
+
     r'''construct tokenizer to process the input raw records.
     '''
     new_token_type_list = constants.CODE_TYPES
     special_token_dict = constants.SPECIAL_TOKEN_DICT
     code_vocab = dict().fromkeys(new_token_type_list)
-
+    _in_target_context_manager = False
     def extend_vocab(self, data_dir):
         # add new tokens from the data dir
         for key in self.new_token_type_list:

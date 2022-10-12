@@ -201,6 +201,7 @@ class PromptEHR(nn.Module):
         '''
         if n is not None: assert isinstance(n, int), 'Input `n` should be integer.'
         if n_per_sample is not None: assert isinstance(n_per_sample, int), 'Input `n_per_sample` should be integer.'
+
         n, n_per_sample = self._compute_n_per_sample(len(test_data), n, n_per_sample)
 
         if sample_config is not None:
@@ -216,24 +217,29 @@ class PromptEHR(nn.Module):
 
         # formulate outputs to standard sequencepatient data
         # need 'visit', 'order', 'feature', 'n_num_feature', 'cat_cardinalties'
-        visit, feature, label = [], [], []
+        visits, features, labels = [], [], []
         for output in outputs:
-            visit_, feature_ = [], []
-            for code in self.config['code_type']: visit_.append(output[code])
-            feature_.extend(output['x_num'])
-            feature_.extend(output['x_cat'])
-            if 'y' in output: label.append(output['y'])
-            visit.append(visit_)
-            feature.append(feature_)
-        feature = np.stack(feature, 0)
+            code_types = [c for c in self.config['code_type'] if c in output]
+            num_visit = len(output[code_types[0]])
+            visit, feature = [], []
+            for n in range(num_visit):
+                visit_ = [output[code][n] for code in code_types]
+                visit.append(visit_)
+            visits.append(visit)
+            feature.extend(output['x_num'])
+            feature.extend(output['x_cat'])
+            if 'y' in output: labels.append(output['y'])
+            features.append(feature)
         
+        features = np.stack(features, 0)
         return_res = {
-            'visit':visit, 
-            'feature':feature, 
+            'visit':visits, 
+            'feature':features, 
             'order':self.config['code_type'],
             'n_num_feature':self.config['n_num_feature'],
             'cat_cardinalties':self.config['cat_cardinalities'],
-            'y':label,
+            'y':labels,
+            'voc': test_data.metadata['voc'],
         }
         return return_res
 
@@ -322,11 +328,14 @@ class PromptEHR(nn.Module):
         '''
         Load pretrained PromptEHR model and make patient EHRs generation.
         Pretrained model was learned from MIMIC-III patient sequence data.
-        '''
+        '''        
         if input_dir is None or not os.path.exists(input_dir):
             if input_dir is None:
                 input_dir = './simulation/pretrained_promptEHR'
-            os.makedirs(input_dir)
+            
+            if not os.path.exists(input_dir):
+                os.makedirs(input_dir)
+            
             url = constants.PRETRAINED_MODEL_URL
             download_pretrained(url, input_dir)
             print(f'Download pretrained PromptEHR model, save to {input_dir}.')
@@ -356,6 +365,7 @@ class PromptEHR(nn.Module):
     def _load_tokenizer(self, data_tokenizer_file, model_tokenizer_file):
         with open(data_tokenizer_file, 'rb') as f:
             self.data_tokenizer = dill.load(f)
+        self.data_tokenizer._in_target_context_manager = False # fix bugs when upgrade transformers to 4.23
 
         with open(model_tokenizer_file, 'rb') as f:
             self.model_tokenizer = dill.load(f)
@@ -483,7 +493,7 @@ class PromptEHR(nn.Module):
                 n_total = min(n_total, n)
             return n_total, n_per_sample
         else:
-            return n, math.ceil(n_test_sample / n)
+            return n, math.ceil(n / n_test_sample)
 
     def _get_num_visit(self, data, idx):
         visits = data['v']
@@ -534,7 +544,7 @@ class PromptEHR(nn.Module):
             total_number += n_per_sample
             if verbose:
                 pbar.update(n_per_sample)
-        
+                    
         if verbose:
             pbar.close()
         return new_record_list

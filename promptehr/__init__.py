@@ -1,5 +1,5 @@
 name='PromptEHR'
-version='0.0.1'
+version='0.0.2'
 
 from .promptehr import PromptEHR
 from .demo_data import load_synthetic_data
