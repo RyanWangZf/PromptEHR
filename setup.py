@@ -13,7 +13,7 @@ with open(os.path.join(this_directory, 'requirements.txt'),
 
 setuptools.setup(
     name = 'PromptEHR',
-    version = '0.0.1a',
+    version = '0.0.1',
     author = 'Zifeng Wang',
     author_email = 'zifengw2@illinois.edu',
     description = 'EHR generation with prompt learning by language models.',
