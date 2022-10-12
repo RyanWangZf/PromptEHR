@@ -134,25 +134,22 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             loss = loss_fct(logits.view(-1, self.lm_head[code_type].out_features), encoded_labels.view(-1))
             
             if label_mask is not None: # do evaluation, compute perplexity
-                try:
-                    if encoded_labels[encoded_labels > 0].shape[0] == 0:
-                        perplexity = None
-                    else:
-                        target = encoded_labels[label_mask.bool()]
-                        mask_logits = logits[label_mask.bool()]
+                if encoded_labels[encoded_labels > 0].shape[0] == 0:
+                    perplexity = None
+                else:
+                    target = encoded_labels[label_mask.bool()]
+                    mask_logits = logits[label_mask.bool()]
 
-                        # debug: move to CPU see errors
-                        # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
-                        
-                        prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
-                        nll = -torch.log(prob+constants.eps)
-                        perplexity = nll.exp()
-                        if torch.isnan(perplexity).any():
-                            warnings.warn('Find NaN perplexity during the forward of PromptEHR model!')
-                except:
-                    pdb.set_trace()
-                    pass
+                    # debug: move to CPU see errors
+                    # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
 
+                    prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
+                    nll = -torch.log(prob+constants.eps)
+                    perplexity = nll.exp()
+                    if torch.isnan(perplexity).any():
+                        warnings.warn('Find NaN perplexity during the forward of PromptEHR model!')
+                    perplexity = perplexity.median()
+                
         if not return_dict:
             output = (logits,) + outputs[1:]
             return ((loss,) + output) if loss is not None else output

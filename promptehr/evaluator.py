@@ -12,7 +12,7 @@ class Evaluator:
         self.collate_fn = collate_fn
         self.device = 'cpu' if device is None else device
 
-    def evaluate(self, code_type, ppl_type, eval_batch_size=64):
+    def evaluate(self, code_type, ppl_type, eval_batch_size):
         mimic_val_dataset = self.dataset
         mimic_val_collator = self.collate_fn
         mimic_val_collator.set_eval_code_type(code_type)

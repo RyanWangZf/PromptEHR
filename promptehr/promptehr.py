@@ -22,6 +22,7 @@ from .modeling_config import EHRBartConfig, DataTokenizer, ModelTokenizer
 from .trainer import PromptEHRTrainer
 from .evaluator import Evaluator
 from .model import BartForEHRSimulation
+from . import constants
 
 class PromptEHR(nn.Module):
     '''
@@ -214,12 +215,13 @@ class PromptEHR(nn.Module):
 
         # formulate outputs to standard sequencepatient data
         # need 'visit', 'order', 'feature', 'n_num_feature', 'cat_cardinalties'
-        visit, feature = [], []
+        visit, feature, label = [], [], []
         for output in outputs:
             visit_, feature_ = [], []
             for code in self.config['code_type']: visit_.append(output[code])
             feature_.extend(output['x_num'])
             feature_.extend(output['x_cat'])
+            if 'y' in output: label.append(output['y'])
             visit.append(visit_)
             feature.append(feature_)
         feature = np.stack(feature, 0)
@@ -230,6 +232,7 @@ class PromptEHR(nn.Module):
             'order':self.config['code_type'],
             'n_num_feature':self.config['n_num_feature'],
             'cat_cardinalties':self.config['cat_cardinalities'],
+            'y':label,
         }
         return return_res
 
@@ -290,11 +293,15 @@ class PromptEHR(nn.Module):
             Standard sequential patient records in `PatientSequence` format.
         '''
         self.model.eval()
+        self.eval()
 
-        collator = MimicDataCollator(self.data_tokenizer, 
+        collator = MimicDataCollator(
+            self.data_tokenizer,
             code_types=self.config['code_type'],
             n_num_feature=self.config['n_num_feature'],
-            mode='test', drop_feature=False)
+            mode='test', 
+            drop_feature=False
+            )
 
         evaluator = Evaluator(
             self.model,
@@ -307,15 +314,27 @@ class PromptEHR(nn.Module):
         ppl_types = ['tpl','spl']
         for code_type in code_types:
             for ppl_type in ppl_types:
-                ppl = evaluator.evaluate(code_type, ppl_type)
+                ppl = evaluator.evaluate(code_type, ppl_type, eval_batch_size=self.config['eval_batch_size'])
                 print(f'code: {code_type}, ppl_type: {ppl_type}, value: {ppl}')
 
+    def from_pretrained(self, input_dir='./simulation/pretrained_promptEHR'):
+        '''
+        Load pretrained PromptEHR model and make patient EHRs generation.
+        Pretrained model was learned from MIMIC-III patient sequence data.
+        '''
+        if input_dir is None or not os.path.exists(input_dir):
+            if input_dir is None:
+                input_dir = './trial_search/pretrained_trial2vec'
+            os.makedirs(input_dir)
+            url = constants.PRETRAINED_MODEL_URL
+            download_pretrained(url, input_dir)
+            print(f'Download pretrained PromptEHR model, save to {input_dir}.')
+        
+        print('Load pretrained PromptEHR model from', input_dir)
+        self.load_model(input_dir)
+        
     def _save_config(self, config, output_dir=None):        
-        temp_path = os.path.join(output_dir, 'model_config.json')
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
+        temp_path = os.path.join(output_dir, 'promptehr_config.json')
         with open(temp_path, 'w', encoding='utf-8') as f:
             f.write(
                 json.dumps(config, indent=4)
@@ -323,18 +342,10 @@ class PromptEHR(nn.Module):
 
         # save the data tokenizer and model tokenizer of the model
         temp_path = os.path.join(output_dir, 'data_tokenizer.pkl')
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
         with open(temp_path, 'wb') as f:
             dill.dump(self.data_tokenizer, f)
 
         temp_path = os.path.join(output_dir, 'model_tokenizer.pkl')
-
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
         with open(temp_path, 'wb') as f:
             dill.dump(self.model_tokenizer, f)
 
@@ -366,6 +377,10 @@ class PromptEHR(nn.Module):
 
                 post_sample['x_num'] = torch.tensor(sample['x'][:self.config['n_num_feature']])
                 post_sample['x_cat'] = torch.tensor(sample['x'][self.config['n_num_feature']:], dtype=int)
+
+                if 'y' in sample:
+                    post_sample['y'] = sample['y']
+
                 post_samples.append(post_sample)
             return post_samples
 
@@ -390,8 +405,7 @@ class PromptEHR(nn.Module):
         elif is_best:
             filepath = os.path.join(output_dir, 'best.' + filename)
         else:
-            filepath = os.path.join(self.checkout_dir,
-                                    str(epoch_id) + '.' + filename)
+            filepath = os.path.join(output_dir, str(epoch_id) + '.' + filename)
         
         # save statedict
         state_dict = self.state_dict()
@@ -508,13 +522,18 @@ class PromptEHR(nn.Module):
                     'x_cat':data['x_cat'].cpu().numpy().tolist(),
                     'x_num':data['x_num'].cpu().numpy().tolist(),
                 })
+                # add more features to new_record
+                for k,v in data.items():
+                    if k not in new_record:
+                        new_record[k] = v
                 new_record_list.append(new_record)
             
             total_number += n_per_sample
             if verbose:
-                pbar.update(total_number)
+                pbar.update(n_per_sample)
         
-        pbar.close()
+        if verbose:
+            pbar.close()
         return new_record_list
 
     def _prepare_input_for_generation(self, data):        
@@ -642,6 +661,14 @@ class PromptEHR(nn.Module):
         return new_record
 
 
+def download_pretrained(url, output_dir):
+    import wget
+    import zipfile
+    filename = wget.download(url=url, out=output_dir)
+    zipf = zipfile.ZipFile(filename, 'r')
+    zipf.extractall(output_dir)
+    zipf.close()
+
 def make_dir_if_not_exist(path):
     if not os.path.exists(path):
         os.makedirs(path)
@@ -694,7 +721,7 @@ def check_model_config_file(input_dir):
         return None
 
     # find model_config.json under this input_dir
-    model_config_name = [config for config in ckpt_list if 'model_config.json' in config]
+    model_config_name = [config for config in ckpt_list if 'promptehr_config.json' in config]
     if len(model_config_name) == 1:
         return model_config_name[0]
 

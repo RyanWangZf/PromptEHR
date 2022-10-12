@@ -1,19 +1,11 @@
 # save all constant variables used by the package
-
-CODE_TYPES = [
-    'diagnosis',
-    'procedure',
-    'drug',
-]
-
-SPECIAL_TOKEN_DICT = {
-    'diagnosis': ['<diag>', '</diag>'],
-    'procedure': ['<prod>', '</prod>'],
-    'drug': ['<drug>', '</drug>'],
-}
+CODE_TYPES = ['tbd']
+SPECIAL_TOKEN_DICT = {'tbd':['<tbd>','</tbd>']}
 
 UNKNOWN_TOKEN = '<unk>'
 
 model_max_length = 512
 
 eps = 1e-16
+
+PRETRAINED_MODEL_URL = 'https://uofi.box.com/shared/static/cu09as2bmotrr9bejsfgumv6yx46mmfw.zip'
