@@ -142,13 +142,14 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
 
                     # debug: move to CPU see errors
                     # prob = torch.gather(mask_logits.softmax(1).cpu(), 1, target.unsqueeze(-1).cpu())
-                    
+
                     prob = torch.gather(mask_logits.softmax(1), 1, target.unsqueeze(-1))
                     nll = -torch.log(prob+constants.eps)
                     perplexity = nll.exp()
                     if torch.isnan(perplexity).any():
                         warnings.warn('Find NaN perplexity during the forward of PromptEHR model!')
-
+                    perplexity = perplexity.median()
+                
         if not return_dict:
             output = (logits,) + outputs[1:]
             return ((loss,) + output) if loss is not None else output

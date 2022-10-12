@@ -215,12 +215,13 @@ class PromptEHR(nn.Module):
 
         # formulate outputs to standard sequencepatient data
         # need 'visit', 'order', 'feature', 'n_num_feature', 'cat_cardinalties'
-        visit, feature = [], []
+        visit, feature, label = [], [], []
         for output in outputs:
             visit_, feature_ = [], []
             for code in self.config['code_type']: visit_.append(output[code])
             feature_.extend(output['x_num'])
             feature_.extend(output['x_cat'])
+            if 'y' in output: label.append(output['y'])
             visit.append(visit_)
             feature.append(feature_)
         feature = np.stack(feature, 0)
@@ -231,6 +232,7 @@ class PromptEHR(nn.Module):
             'order':self.config['code_type'],
             'n_num_feature':self.config['n_num_feature'],
             'cat_cardinalties':self.config['cat_cardinalities'],
+            'y':label,
         }
         return return_res
 
@@ -375,6 +377,10 @@ class PromptEHR(nn.Module):
 
                 post_sample['x_num'] = torch.tensor(sample['x'][:self.config['n_num_feature']])
                 post_sample['x_cat'] = torch.tensor(sample['x'][self.config['n_num_feature']:], dtype=int)
+
+                if 'y' in sample:
+                    post_sample['y'] = sample['y']
+
                 post_samples.append(post_sample)
             return post_samples
 
@@ -516,13 +522,18 @@ class PromptEHR(nn.Module):
                     'x_cat':data['x_cat'].cpu().numpy().tolist(),
                     'x_num':data['x_num'].cpu().numpy().tolist(),
                 })
+                # add more features to new_record
+                for k,v in data.items():
+                    if k not in new_record:
+                        new_record[k] = v
                 new_record_list.append(new_record)
             
             total_number += n_per_sample
             if verbose:
-                pbar.update(total_number)
+                pbar.update(n_per_sample)
         
-        pbar.close()
+        if verbose:
+            pbar.close()
         return new_record_list
 
     def _prepare_input_for_generation(self, data):        

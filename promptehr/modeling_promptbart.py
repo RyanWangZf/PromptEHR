@@ -138,7 +138,35 @@ class ConditionalPrompt(nn.Module):
             x.append(self.cat_tokenizer(x_cat))
         return x[0] if len(x) == 1 else torch.cat(x, dim=1)
 
+
+class BartLearnedPositionalEmbedding(nn.Embedding):
+    """
+    This module learns positional embeddings up to a fixed maximum size.
+    """
+
+    def __init__(self, num_embeddings: int, embedding_dim: int):
+        # Bart is set up so that if padding_idx is specified then offset the embedding ids by 2
+        # and adjust num_embeddings appropriately. Other models don't have this hack
+        self.offset = 2
+        super().__init__(num_embeddings + self.offset, embedding_dim)
+
+    def forward(self, input_ids_shape: torch.Size, past_key_values_length: int = 0):
+        """`input_ids_shape` is expected to be [bsz x seqlen]."""
+        bsz, seq_len = input_ids_shape[:2]
+        positions = torch.arange(
+            past_key_values_length, past_key_values_length + seq_len, dtype=torch.long, device=self.weight.device
+        )
+        return super().forward(positions + self.offset)
+
 class PromptBartEncoder(BartEncoder):
+    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None):
+        super().__init__(config, embed_tokens)
+        embed_dim = config.d_model
+        self.embed_positions = BartLearnedPositionalEmbedding(
+            config.max_position_embeddings,
+            embed_dim,
+        )
+
     def forward(self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
@@ -248,6 +276,13 @@ class PromptBartEncoder(BartEncoder):
         )
 
 class PromptBartDecoder(BartDecoder):
+    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None):
+        super().__init__(config, embed_tokens)
+        self.embed_positions = BartLearnedPositionalEmbedding(
+            config.max_position_embeddings,
+            config.d_model,
+        )
+
     def forward(self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
@@ -498,7 +533,7 @@ class PromptBartModel(BartModel):
                 prompt_embeds = self.encoder_conditional_prompt(x_num=x_num, x_cat=x_cat)
             else:
                 prompt_embeds = None
-
+            
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -552,4 +587,3 @@ class PromptBartModel(BartModel):
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
         )
-

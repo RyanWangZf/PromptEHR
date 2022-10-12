@@ -293,8 +293,9 @@ class PromptEHRTrainer(Trainer):
 
         # Number of losses has been rounded to a multiple of batch_size and in a distributed training, the number of
         # samplers has been rounded to a multiple of batch_size, so we truncate.
-        if all_losses is not None:
-            all_losses = all_losses[:num_samples]
+        # if all_losses is not None:
+        #     all_losses = all_losses[:num_samples]
+
         if all_preds is not None:
             all_preds = nested_truncate(all_preds, num_samples)
         if all_labels is not None:
@@ -316,6 +317,7 @@ class PromptEHRTrainer(Trainer):
         # To be JSON-serializable, we need to remove numpy types or zero-d tensors
         metrics = denumpify_detensorize(metrics)
 
+        
         if all_losses is not None:
             if np.isnan(all_losses).any():
                 # deal with nan
