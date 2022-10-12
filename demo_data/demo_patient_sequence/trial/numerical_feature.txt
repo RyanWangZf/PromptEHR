@@ -1,5 +1,0 @@
-performance status
-height
-weight
-age
-tumor size
