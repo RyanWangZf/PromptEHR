@@ -9,6 +9,20 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
+class Voc(object):
+    def __init__(self):
+        self.idx2word = {}
+        self.word2idx = {}
+    
+    def __len__(self):
+        return len(self.idx2word.keys())
+
+    def add_sentence(self, sentence):
+        for word in sentence:
+            if word not in self.word2idx:
+                self.idx2word[len(self.word2idx)] = word
+                self.word2idx[word] = len(self.word2idx)
+
 class SequencePatientBase(Dataset):
     '''
     Load sequential patient inputs for longitudinal patient records generation.
