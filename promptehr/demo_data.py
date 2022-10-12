@@ -1,8 +1,11 @@
 import os
 import json
 import pdb
+import wget
+import dill
 
 from .dataset import MimicDataset
+from .import constants
 
 # def load_demo_data(input_dir='./demo_data'):
 #     '''
@@ -28,13 +31,20 @@ from .dataset import MimicDataset
 
 #     return return_dict
 
-
-def load_synthetic_data(input_dir='./demo_data', n_sample=None):
+def load_synthetic_data(input_dir='./demo_data/synthetic_ehr', n_sample=None):
     '''
     Load the generated synthetic EHRs by PromptEHR.
     '''
+    if input_dir is None or not os.path.exists(input_dir):
+        if input_dir is None:
+            input_dir = './demo_data/synthetic_ehr'
+        os.makedirs(input_dir)
+        url = constants.SYNTHETIC_DATA_URL
+        filename = wget.download(url, out=input_dir)
+        print(f'Download synthetic EHRs to {input_dir}.')
+    
+    with open(os.path.join(input_dir,'data.pkl'), 'rb') as f:
+        x = dill.load(f)
 
-    pdb.set_trace()
-    pass
-
+    return x
 
