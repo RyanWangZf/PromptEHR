@@ -46,5 +46,11 @@ def load_synthetic_data(input_dir='./demo_data/synthetic_ehr', n_sample=None):
     with open(os.path.join(input_dir,'data.pkl'), 'rb') as f:
         x = dill.load(f)
 
+    if n_sample is not None:
+        # cut to get smaller demo data
+        x['visit'] = x['visit'][:n_sample]
+        x['y'] = x['y'][:n_sample]
+        x['feature'] = x['feature'][:n_sample]
+
     return x
 
