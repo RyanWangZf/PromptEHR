@@ -17,7 +17,7 @@ setuptools.setup(
     author = 'Zifeng Wang',
     author_email = 'zifengw2@illinois.edu',
     description = 'EHR generation with prompt learning by language models.',
-    url = 'https://github.com/RyanWangZf/Trial2Vec',
+    url = 'https://github.com/RyanWangZf/PromptEHR',
     keywords=['healthcare','EHR','deep learning','AI'],
     long_description=long_description,
     long_description_content_type='text/markdown',
