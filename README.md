@@ -1,4 +1,8 @@
 # PromptEHR
+[![PyPI version](https://badge.fury.io/py/transtab.svg)](https://badge.fury.io/py/promptehr)
+[![Downloads](https://pepy.tech/badge/promptehr)](https://pepy.tech/project/promptehr)
+![GitHub Repo stars](https://img.shields.io/github/stars/ryanwangzf/promptehr)
+![GitHub Repo forks](https://img.shields.io/github/forks/ryanwangzf/promptehr)
 
 Wang, Zifeng and Sun, Jimeng. (2022). PromptEHR: Conditional Electronic Healthcare Records Generation with Prompt Learning. EMNLP'22.
 
