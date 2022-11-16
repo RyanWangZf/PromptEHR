@@ -50,7 +50,6 @@ class DataTokenizer(BartTokenizer):
 
     def update_special_token_config(self, code_types):
         self.new_token_type_list = code_types
-        self.code_vocab = defaultdict(list)
         self.special_token_dict = {}
         special_token_list = []
         for code_type in code_types:

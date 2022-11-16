@@ -328,14 +328,12 @@ class PromptEHR(nn.Module):
         '''
         Load pretrained PromptEHR model and make patient EHRs generation.
         Pretrained model was learned from MIMIC-III patient sequence data.
-        '''        
-        if input_dir is None or not os.path.exists(input_dir):
-            if input_dir is None:
-                input_dir = './simulation/pretrained_promptEHR'
-            
-            if not os.path.exists(input_dir):
-                os.makedirs(input_dir)
-            
+        '''
+        if input_dir is None:
+            input_dir = './simulation/pretrained_promptEHR'
+        
+        if not os.path.exists(input_dir):
+            os.makedirs(input_dir)            
             url = constants.PRETRAINED_MODEL_URL
             download_pretrained(url, input_dir)
             print(f'Download pretrained PromptEHR model, save to {input_dir}.')
