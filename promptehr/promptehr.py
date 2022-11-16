@@ -7,6 +7,7 @@ import json
 import math
 import glob
 import random
+import copy
 from collections import defaultdict
 
 import dill
@@ -96,6 +97,7 @@ class PromptEHR(nn.Module):
         num_worker=8,
         output_dir='./promptEHR_logs',
         device='cuda:0',
+        seed=123,
         ) -> None:
         super().__init__()
         self.data_tokenizer = DataTokenizer.from_pretrained('facebook/bart-base')
@@ -140,7 +142,7 @@ class PromptEHR(nn.Module):
             load_best_model_at_end=True,
             logging_dir=output_dir,      # directory for storing logs
             overwrite_output_dir=True,
-            seed=123,
+            seed=seed,
             no_cuda=True if self.device == 'cpu' else False, # if set CPU
         )
 
@@ -340,7 +342,36 @@ class PromptEHR(nn.Module):
         
         print('Load pretrained PromptEHR model from', input_dir)
         self.load_model(input_dir)
+    
+    def update_config(self, config):
+        '''
+        Update the configuration of the model.
+
+        Parameters
+        ----------
+        config: dict
+            The configuration of the model.
+            Refer to the `config` in `__init__` for more details.
+        '''
+        self.config.update(config)
         
+        # update training args
+        train_args = copy.deepcopy(config)
+        for k, v in config.items():
+            if k in constants.config_to_train_args:
+                train_args[constants.config_to_train_args[k]] = v
+                train_args.pop(k)
+        
+        for k,v in train_args:
+            if hasattr(self.training_args, k):
+                setattr(self.training_args, k, v)
+        
+        print('### Model Config ###')
+        print(self.config)
+
+        print('### Training Args ###')
+        print(self.training_args)
+
     def _save_config(self, config, output_dir=None):        
         temp_path = os.path.join(output_dir, 'promptehr_config.json')
         with open(temp_path, 'w', encoding='utf-8') as f:
