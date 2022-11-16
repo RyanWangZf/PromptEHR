@@ -362,7 +362,7 @@ class PromptEHR(nn.Module):
                 train_args[constants.config_to_train_args[k]] = v
                 train_args.pop(k)
         
-        for k,v in train_args:
+        for k,v in train_args.items():
             if hasattr(self.training_args, k):
                 setattr(self.training_args, k, v)
         
