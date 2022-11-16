@@ -366,6 +366,11 @@ class PromptEHR(nn.Module):
             if hasattr(self.training_args, k):
                 setattr(self.training_args, k, v)
         
+        # important when you train the model with different datasets
+        code_type = self.config['code_type']
+        self.training_args.metric_for_best_model = \
+            f'eval_ppl_{code_type[0]}' if code_type is not None else None,
+
         print('### Model Config ###')
         print(self.config)
 
