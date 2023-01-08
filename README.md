@@ -6,6 +6,8 @@
 
 Wang, Zifeng and Sun, Jimeng. (2022). PromptEHR: Conditional Electronic Healthcare Records Generation with Prompt Learning. EMNLP'22.
 
+# News
+- [2023/01/08] `PromptEHR` is now integrated into [`PyTrial`](https://github.com/RyanWangZf/PyTrial) with a complete [documentation](https://pytrial.readthedocs.io/en/latest/trial_simulation/sequence/promptehr.html) and [example](https://colab.research.google.com/drive/1EbzLdSwTrbgsEgz8z70qzTLQWiPWlyRm?usp=sharing), please check!
 
 
 # Usage
