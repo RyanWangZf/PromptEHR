@@ -97,9 +97,15 @@ class ModelTokenizer:
                 vocab[str(org_vocab[token])] = i+1
             offset = len(vocab)
 
-            for i, token in enumerate(value): # str token = 'diag_xxx' 
-                _, index = token.split('_')
-                vocab[str(org_vocab[token])] = int(index) + offset
+            for i, token in enumerate(value): # str token = 'diag_xxx'
+                # fix: if token has more than one '_', e.g., 'diag_t_a_b_100', will only take the last '100' as the index. 
+                # _, index = token.split('_')
+                indexes = token.split('_')
+                try:
+                    index = int(indexes[-1])
+                except:
+                    raise ValueError(f"Token {token} is not a valid token, it should be splited by '_' and the last part should be a number, e.g., 'diag_100'. ")
+                vocab[str(org_vocab[token])] = index + offset
             
             # new tokenizer
             specific_tokenizer = Tokenizer(WordLevel(vocab=vocab, unk_token=constants.UNKNOWN_TOKEN))
