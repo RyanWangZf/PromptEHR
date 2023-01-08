@@ -12,3 +12,12 @@ eps = 1e-16
 PRETRAINED_MODEL_URL = 'https://storage.googleapis.com/pytrial/promptEHR_pretrained.zip'
 
 SYNTHETIC_DATA_URL = 'https://github.com/RyanWangZf/PromptEHR/raw/main/demo_data/synthetic_ehr/data.pkl'
+
+# a name mapping from the original promptehr config to the training_args
+config_to_train_args = {
+    'epochs': 'num_train_epochs',
+    'num_worker': 'dataloader_num_workers',
+    'batch_size': 'per_device_train_batch_size',
+    'eval_batch_size': 'per_device_eval_batch_size',
+    'eval_step': 'eval_steps',
+}
