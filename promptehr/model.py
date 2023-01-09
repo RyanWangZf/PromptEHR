@@ -158,8 +158,8 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             return ((loss,) + output) if loss is not None else output
 
         # debug
-        if logits.isnan().sum() > 0:
-            pdb.set_trace()
+        # if logits.isnan().sum() > 0:
+        #     pdb.set_trace()
 
         return EHRBartOutput(
             loss=loss,
