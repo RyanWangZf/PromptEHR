@@ -40,7 +40,6 @@ from transformers.generation_logits_process import (
 import torch
 from torch import nn
 import torch.distributed as dist
-
 logger = logging.get_logger(__name__)
 
 class EHRGenerationMixin(GenerationMixin):
@@ -1169,7 +1168,6 @@ class EHRGenerationMixin(GenerationMixin):
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
-            
             # forward pass to get next token
             outputs = self(
                 **model_inputs,
@@ -1177,16 +1175,17 @@ class EHRGenerationMixin(GenerationMixin):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 code_type=code_type,
-            )
+                )
 
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
                 continue  # don't waste resources running the code we don't need
-
+            
             next_token_logits = outputs.logits[:, -1, :]
-
+            
             # pre-process distribution
             next_token_scores = logits_processor(logits_ids, next_token_logits)
+
             next_token_scores = logits_warper(logits_ids, next_token_scores)
 
             # Store scores, attentions and hidden_states when required
@@ -1212,7 +1211,7 @@ class EHRGenerationMixin(GenerationMixin):
             if probs.isnan().sum() == probs.shape[1]:
                 logger.warning(f'probability of next tokens in {code_type} is NaN, do random sampling.')
                 probs = torch.ones_like(probs).softmax(dim=-1)
-
+                
             next_tokens = torch.multinomial(probs, num_samples=1).squeeze(1)
 
             # finished sentences should have their next token be a padding token
@@ -1295,10 +1294,12 @@ class EHRGenerationMixin(GenerationMixin):
         }
 
         # 2.5. encode prompts if exist as the condition passed to encoder
-        if 'x_num' in encoder_kwargs or 'x_cat' in encoder_kwargs:
-            prompt_embeds = promt_encoder(x_num=encoder_kwargs.pop('x_num'), x_cat=encoder_kwargs.pop('x_cat'))
-        else:
-            prompt_embeds = None
+        prompt_embeds = None
+        if ('x_num' in encoder_kwargs or 'x_cat' in encoder_kwargs):
+            x_num = encoder_kwargs.pop('x_num')
+            x_cat = encoder_kwargs.pop('x_cat')
+            if promt_encoder is not None:
+                prompt_embeds = promt_encoder(x_num=x_num, x_cat=x_cat)
         encoder_kwargs['inputs_prompt_embeds'] = prompt_embeds
 
         # 3. make sure that encoder returns `ModelOutput`
@@ -1316,7 +1317,7 @@ class EHRGenerationMixin(GenerationMixin):
         bos_token_id: int = None,
         model_kwargs: Optional[Dict[str, torch.Tensor]] = None,
         device: torch.device = None,
-    ) -> torch.LongTensor:        
+    ) -> torch.LongTensor:
         if model_kwargs is not None and "decoder_input_ids" in model_kwargs:
             return model_kwargs.pop("decoder_input_ids")
         else:
@@ -1324,7 +1325,6 @@ class EHRGenerationMixin(GenerationMixin):
             if device is None:
                 device = self.device
             return torch.ones((batch_size, 1), dtype=torch.long, device=device) * decoder_start_token_id
-
 
     def _get_logits_processor(
         self,
@@ -1419,6 +1419,7 @@ class EHRGenerationMixin(GenerationMixin):
                 ExponentialDecayLengthPenalty(exponential_decay_length_penalty, eos_token_id, input_ids_seq_length)
             )
         processors = self._merge_criteria_processor_list(processors, logits_processor)
+        
         # `LogitNormalization` should always be the last logit processor, when present
         if renormalize_logits is True:
             processors.append(LogitNormalization())

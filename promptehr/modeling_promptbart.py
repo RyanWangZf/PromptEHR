@@ -539,10 +539,9 @@ class PromptBartModel(BartModel):
         if encoder_outputs is None:
             if x_num is not None or x_cat is not None:
                 if self.encoder_conditional_prompt is None:
-                    warnings.warn('Detect input baseline features in the data, but `ConditionalPrompt` \
-                        was not built because no numerical or categorical baseline features \
-                        are provided when model was initialized. Consider setting \
-                        `config.n_num_feature` or `config.cat_cardinalities` when initializing the model.')
+                    warnings.warn('Detect input baseline features in the data,` \
+                        but `ConditionalPrompt was not built because no numerical or categorical baseline features are provided when model was initialized. \
+                        Consider setting `config.n_num_feature` or `config.cat_cardinalities` when initializing the model.')
                     prompt_embeds = None
                 else:
                     prompt_embeds = self.encoder_conditional_prompt(x_num=x_num, x_cat=x_cat)
@@ -570,11 +569,11 @@ class PromptBartModel(BartModel):
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         if x_num is not None or x_cat is not None:
             if self.decoder_conditional_prompt is None:
-                warnings.warn('Detect input baseline features in the data, but `ConditionalPrompt` \
-                    was not built because no numerical or categorical baseline features \
-                    are provided when model was initialized. Consider setting \
-                    `config.n_num_feature` or `config.cat_cardinalities` when initializing the model.')
-                decoder_prompt_embeds = None
+                warnings.warn('{} {} {}'.format('Detect input baseline features in the data, but `ConditionalPrompt`',
+                    'was not built because no numerical or categorical baseline features',
+                    'Consider setting `config.n_num_feature` or `config.cat_cardinalities` when initializing the model.')
+                )
+                decoder_prompt_embeds = None 
             else:
                 decoder_prompt_embeds = self.decoder_conditional_prompt(x_num=x_num, x_cat=x_cat)
         else:

@@ -74,7 +74,13 @@ class MimicDataCollator:
         tokenizer,
         code_types,
         n_num_feature,
-        mlm_prob=0.15, lambda_poisson=3.0, del_prob=0.15, max_train_batch_size=16, drop_feature=False, mode='train'):
+        mlm_prob=0.15, 
+        lambda_poisson=3.0, 
+        del_prob=0.15,
+        max_train_batch_size=16, 
+        drop_feature=False, 
+        mode='train'
+        ):
         '''mlm_prob: probability of masked tokens
         lambda_poisoon: span infilling parameters
         del_prob: probability of delete tokens
@@ -111,9 +117,11 @@ class MimicDataCollator:
                 post_sample = {}
                 visit = sample['v']
                 post_sample.update(visit)
-                if not isinstance(sample['x'], list): sample['x'] = sample['x'].tolist()
-                post_sample['x_num'] = sample['x'][:self.n_num_feature]
-                post_sample['x_cat'] = sample['x'][self.n_num_feature:]
+                if ('x' in sample) and (self.n_num_feature is not None):
+                    if not isinstance(sample['x'], list):
+                        sample['x'] = sample['x'].tolist()
+                    post_sample['x_num'] = sample['x'][:self.n_num_feature]
+                    post_sample['x_cat'] = sample['x'][self.n_num_feature:]
                 post_samples.append(post_sample)
             return post_samples
         

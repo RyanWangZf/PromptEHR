@@ -38,10 +38,12 @@ class PromptEHR(nn.Module):
     token_dict: dict[list]
         A dictionary of new tokens (code events, e.g., ICD code) that the model needs to learn and generate.
 
-    n_num_feature: int
+    n_num_feature: int (default=None)
         Number of numerical patient baseline features. Notice that it assumes that the input
         baseline features are `ALWAYS` numerical feature first. That is to say,
         the input baseline feature = [num1, num2, .., num_n, cat1, cat2,...].
+        If not specified, the model will never include baseline features
+        for conditional generation!
 
     cat_cardinalities: list[int]
         The number of categories for each categorical patient baseline features.
@@ -101,6 +103,7 @@ class PromptEHR(nn.Module):
         ) -> None:
         super().__init__()
         self.data_tokenizer = DataTokenizer.from_pretrained('facebook/bart-base')
+
         # will extend vocab after pass training data
         if code_type is not None:
             self.data_tokenizer.update_special_token_config(code_types=code_type)
@@ -144,10 +147,12 @@ class PromptEHR(nn.Module):
             overwrite_output_dir=True,
             seed=seed,
             no_cuda=True if self.device == 'cpu' else False, # if set CPU
-        )
+            )
 
         # avoid dead clock when taking multiple workers for dataloaders
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
+        self.model = None
 
     def fit(self, train_data, val_data=None):
         '''
@@ -203,6 +208,8 @@ class PromptEHR(nn.Module):
         '''
         if n is not None: assert isinstance(n, int), 'Input `n` should be integer.'
         if n_per_sample is not None: assert isinstance(n_per_sample, int), 'Input `n_per_sample` should be integer.'
+        assert (not n_per_sample is None) or (not n is None), 'Either `n` or `n_per_sample` should be provided to generate.'
+        assert isinstance(self.model, BartForEHRSimulation), 'Model not found! Please fit the model or load the model from pretrained checkpoint first.'
 
         n, n_per_sample = self._compute_n_per_sample(len(test_data), n, n_per_sample)
 
@@ -228,12 +235,19 @@ class PromptEHR(nn.Module):
                 visit_ = [output[code][n] for code in code_types]
                 visit.append(visit_)
             visits.append(visit)
-            feature.extend(output['x_num'])
-            feature.extend(output['x_cat'])
+            if 'x_num' in output:
+                feature.extend(output['x_num'])
+            if 'x_cat' in output:
+                feature.extend(output['x_cat'])
+            if len(feature) > 0:
+                features.append(feature)
             if 'y' in output: labels.append(output['y'])
-            features.append(feature)
         
-        features = np.stack(features, 0)
+        if len(features) > 0:
+            features = np.stack(features, 0)
+        else:
+            features = None
+
         return_res = {
             'visit':visits, 
             'feature':features, 
@@ -558,7 +572,7 @@ class PromptEHR(nn.Module):
             # to device
             device = 'cpu' if self.device == 'cpu' else 'cuda:0'
             if 'x_num' in data: data['x_num'] = data['x_num'].to(device)
-            if 'x_cat' in data: data['x_cat'] = data['x_cat'].to(device)
+            if 'x_cat' in data: data['x_cat'] = data['x_cat'].to(device)                
             
             inputs = self._prepare_input_for_generation(data) 
 
@@ -648,9 +662,12 @@ class PromptEHR(nn.Module):
                 
                 else:
                     sample_gen_kwargs['max_length'] = num_code+2
+
                     # do conditional generation
-                    sample_gen_kwargs['x_cat'] = data['x_cat']
-                    sample_gen_kwargs['x_num'] = data['x_num']
+                    if 'x_cat' in data:
+                        sample_gen_kwargs['x_cat'] = data['x_cat']
+                    if 'x_num' in data:
+                        sample_gen_kwargs['x_num'] = data['x_num']
 
                     new_next_tokens = self.model.generate(input_ids, **sample_gen_kwargs)
 

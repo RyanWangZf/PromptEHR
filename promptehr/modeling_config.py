@@ -29,6 +29,12 @@ def EHRBartConfig(data_tokenizer, model_tokenizer, **kwargs):
     if 'cat_cardinalities' not in kwargs:
         kwargs['cat_cardinalities'] = None
     bart_config.__dict__.update(kwargs)
+
+    # specify bos, eos token id
+    bart_config.__dict__['decoder_start_token_id'] = 0
+    bart_config.__dict__['bos_token_id'] = 0
+    bart_config.__dict__['eos_token_id'] = 1
+    bart_config.__dict__['forced_eos_token_id'] = 1
     return bart_config
 
 class DataTokenizer(BartTokenizer):
@@ -110,6 +116,7 @@ class ModelTokenizer:
             # new tokenizer
             specific_tokenizer = Tokenizer(WordLevel(vocab=vocab, unk_token=constants.UNKNOWN_TOKEN))
             specific_tokenizer.pre_tokenizer = Whitespace()
+
             # num_token_dict is decided by the max index instead of number of tokens
             num_token_dict[key] = (max(vocab.values())+1) - offset
             tokenizer_dict[key] = specific_tokenizer
