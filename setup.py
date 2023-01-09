@@ -13,10 +13,10 @@ with open(os.path.join(this_directory, 'requirements.txt'),
 
 setuptools.setup(
     name = 'PromptEHR',
-    version = '0.0.3',
+    version = '0.0.4',
     author = 'Zifeng Wang',
     author_email = 'zifengw2@illinois.edu',
-    description = 'EHR generation with prompt learning by language models.',
+    description = 'Sequence patient electronic healthcare record generation with large language models (LLMs) as the neural database.',
     url = 'https://github.com/RyanWangZf/PromptEHR',
     keywords=['healthcare','EHR','deep learning','AI'],
     long_description=long_description,
