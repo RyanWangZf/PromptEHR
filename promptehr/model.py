@@ -116,8 +116,11 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             encoded_labels = encoded_labels - self.model_tokenizer.label_offset
             encoded_labels[encoded_labels < 0] = -100 # ignore special tokens when computing losses
 
-            if x_num is not None or x_cat is not None:
+            if (x_num is not None or x_cat is not None) \
+                and (self.model.encoder_conditional_prompt is not None) \
+                and (self.model.decoder_conditional_prompt is not None):
                 # adjust label mask if context conditional prompt is used
+
                 n_num = x_num.shape[1] if x_num is not None else 0
                 n_cat = x_cat.shape[1] if x_cat is not None else 0
                 num_label_offset = n_num + n_cat
