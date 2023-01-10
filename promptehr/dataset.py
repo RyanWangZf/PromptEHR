@@ -111,7 +111,7 @@ class MimicDataCollator:
     def __call__(self, samples: List[InputDataClass]) -> Dict[str, Any]:
         # samples format
         # [{'pid': 'x_num':[], 'x_cat':[], 'diagnosis':[[],[],[],...], 'procedure': [[],[]...], 'drug':[[],[],...] }]
-        def _seq_patient_to_prompther(samples):
+        def _seq_patient_to_promptehr(samples):
             post_samples = []
             for sample in samples:
                 post_sample = {}
@@ -125,7 +125,7 @@ class MimicDataCollator:
                 post_samples.append(post_sample)
             return post_samples
         
-        samples = _seq_patient_to_prompther(samples)
+        samples = _seq_patient_to_promptehr(samples)
 
         if self.is_training:
             batch = self.call_train(samples)

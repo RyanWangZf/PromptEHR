@@ -424,18 +424,18 @@ class PromptEHR(nn.Module):
         return config
 
     def _get_test_dataloader(self, dataset):
-        def _seq_patient_to_prompther(samples):
+        def _seq_patient_to_promptehr(samples):
             post_samples = []
             for sample in samples:
                 post_sample = {}
                 visit = sample['v']
                 post_sample.update(visit)
 
-                if not isinstance(sample['x'], list): 
-                    sample['x'] = sample['x'].tolist()
-
-                post_sample['x_num'] = torch.tensor(sample['x'][:self.config['n_num_feature']])
-                post_sample['x_cat'] = torch.tensor(sample['x'][self.config['n_num_feature']:], dtype=int)
+                if ('x' in sample) and (self.config['n_num_feature'] is not None):
+                    if not isinstance(sample['x'], list): 
+                        sample['x'] = sample['x'].tolist()
+                    post_sample['x_num'] = torch.tensor(sample['x'][:self.config['n_num_feature']])
+                    post_sample['x_cat'] = torch.tensor(sample['x'][self.config['n_num_feature']:], dtype=int)
 
                 if 'y' in sample:
                     post_sample['y'] = sample['y']
@@ -449,7 +449,7 @@ class PromptEHR(nn.Module):
                 num_workers=0,
                 pin_memory=False,
                 shuffle=False,
-                collate_fn=_seq_patient_to_prompther,
+                collate_fn=_seq_patient_to_promptehr,
                 )
         return dataloader
 
@@ -579,10 +579,16 @@ class PromptEHR(nn.Module):
             # start generation
             for _ in range(n_per_sample):
                 new_record = self._generation_loop(data, inputs)
-                new_record.update({
-                    'x_cat':data['x_cat'].cpu().numpy().tolist(),
-                    'x_num':data['x_num'].cpu().numpy().tolist(),
-                })
+                if 'x_cat' in data:
+                    new_record.update({
+                        'x_cat':data['x_cat'].cpu().numpy().tolist(),
+                    })
+                    
+                if 'x_num' in data:
+                    new_record.update({
+                        'x_num':data['x_num'].cpu().numpy().tolist(),
+                    })
+
                 # add more features to new_record
                 for k,v in data.items():
                     if k not in new_record:
