@@ -207,12 +207,13 @@ class PromptEHRTrainer(Trainer):
 
             # Update containers on host
             if loss is not None:
-                if len(loss) == 1:
-                    # if output the mean batch loss
-                    losses = self._nested_gather(loss.repeat(batch_size))
-                else:
-                    # if output the raw batch loss sequence
-                    losses = loss
+                # if len(loss) == 1:
+                #     # if output the mean batch loss
+                #     losses = self._nested_gather(loss.repeat(batch_size))
+                # else:
+                #     # if output the raw batch loss sequence
+                #     losses = loss
+                losses = loss
                 losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
             if labels is not None:
                 labels = self._pad_across_processes(labels)
@@ -382,8 +383,8 @@ class PromptEHRTrainer(Trainer):
                     loss, outputs = self.compute_loss(model, inputs, return_outputs=True, return_perplexity=True)
 
                 if loss is not None:
-                    # loss = loss.mean().detach()
-                    loss = loss.detach()
+                    loss = loss.item() # return ppl is a 0-d tensor
+                    loss = torch.tensor([loss])
 
                 if isinstance(outputs, dict):
                     logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])

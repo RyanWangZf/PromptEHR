@@ -13,7 +13,7 @@ with open(os.path.join(this_directory, 'requirements.txt'),
 
 setuptools.setup(
     name = 'PromptEHR',
-    version = '0.0.4',
+    version = '0.0.5',
     author = 'Zifeng Wang',
     author_email = 'zifengw2@illinois.edu',
     description = 'Sequence patient electronic healthcare record generation with large language models (LLMs) as the neural database.',

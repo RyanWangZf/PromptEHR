@@ -137,7 +137,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
             loss = loss_fct(logits.view(-1, self.lm_head[code_type].out_features), encoded_labels.view(-1))
             
             if label_mask is not None: # do evaluation, compute perplexity
-                if encoded_labels[encoded_labels > 0].shape[0] == 0:
+                if encoded_labels[encoded_labels >= 0].shape[0] == 0:
                     perplexity = None
                 else:
                     target = encoded_labels[label_mask.bool()]
