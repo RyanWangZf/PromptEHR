@@ -126,6 +126,7 @@ class ModelTokenizer:
         self.num_token_dict = num_token_dict
         self.label_offset = offset
 
+
     def encode(self, input_ids, code_type):
         if len(input_ids.shape) > 1: # a batch
             ids = self.encode_batch(input_ids, code_type)

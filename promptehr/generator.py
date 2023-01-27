@@ -1211,7 +1211,7 @@ class EHRGenerationMixin(GenerationMixin):
             if probs.isnan().sum() == probs.shape[1]:
                 logger.warning(f'probability of next tokens in {code_type} is NaN, do random sampling.')
                 probs = torch.ones_like(probs).softmax(dim=-1)
-                
+            
             next_tokens = torch.multinomial(probs, num_samples=1).squeeze(1)
 
             # finished sentences should have their next token be a padding token
@@ -1220,11 +1220,30 @@ class EHRGenerationMixin(GenerationMixin):
                 next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
 
             # update generated ids, model inputs, and length for next step
-            new_next_tokens = next_tokens.cpu().numpy()+self.model_tokenizer.label_offset
+            new_next_tokens = next_tokens.cpu().numpy() + self.model_tokenizer.label_offset
             new_next_tokens_str = self.model_tokenizer.tokenizer_dict[code_type].decode(new_next_tokens)
-            new_next_tokens = new_next_tokens_str.split()
-            new_next_tokens = np.array(new_next_tokens).astype(int)
-            new_next_tokens = torch.tensor(new_next_tokens).to(next_tokens.device)
+            if new_next_tokens_str == '':
+                warnings.warn(f"Unknown token {new_next_tokens} found in {code_type},"
+                            " seems the training data does not contain these tokens but the test data does."
+                            " Please check your data."
+                            " Will randomly pick a token here!")
+                
+                # randomly pick a token to fill
+                random_token = '<unk>'
+                not_select_list = self.data_tokenizer(f'<{code_type}> </{code_type}>', add_special_tokens=False)['input_ids']
+                not_select_list = [str(x) for x in not_select_list]
+                not_select_list += ['<unk>']
+                all_keys = list(self.model_tokenizer.tokenizer_dict[code_type].get_vocab().keys())
+                while random_token in not_select_list:
+                    random_token = np.random.choice(all_keys,1)[0]
+                random_token = int(random_token)
+
+                new_next_tokens = torch.ones_like(torch.tensor(new_next_tokens)) * random_token
+                new_next_tokens = new_next_tokens.to(next_tokens.device)
+            else:
+                new_next_tokens = new_next_tokens_str.split()
+                new_next_tokens = np.array(new_next_tokens).astype(int)
+                new_next_tokens = torch.tensor(new_next_tokens).to(next_tokens.device)
 
             input_ids = torch.cat([input_ids, new_next_tokens[:, None]], dim=-1)
             logits_ids = torch.cat([logits_ids, next_tokens[:, None]], dim=-1)

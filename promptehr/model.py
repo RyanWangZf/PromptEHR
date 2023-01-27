@@ -16,7 +16,7 @@ from .modeling_promptbart import PromptBartModel
 from . import constants
 
 class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
-    def __init__(self, config: EHRBartConfig, model_tokenizer: ModelTokenizer=None):
+    def __init__(self, config: EHRBartConfig, model_tokenizer: ModelTokenizer=None, data_tokenizer: DataTokenizer=None):
         super().__init__(config)
 
         config.is_decoder = False
@@ -40,6 +40,7 @@ class BartForEHRSimulation(BartPretrainedModel, EHRGenerationMixin):
 
         # for specific modal generation
         self.model_tokenizer = model_tokenizer
+        self.data_tokenizer = data_tokenizer
 
     def forward(
         self,

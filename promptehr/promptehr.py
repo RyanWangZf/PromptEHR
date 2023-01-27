@@ -9,6 +9,7 @@ import glob
 import random
 import copy
 from collections import defaultdict
+import warnings
 
 import dill
 import torch
@@ -512,11 +513,13 @@ class PromptEHR(nn.Module):
         self.configuration = EHRBartConfig(self.data_tokenizer, self.model_tokenizer, n_num_feature=self.config['n_num_feature'], cat_cardinalities=self.config['cat_cardinalities'])
         self.data_tokenizer.update_special_token_config(code_types=self.config['code_type'])
 
-        # self.data_tokenizer.decode([50508, 51324,51461, 50597, 50918,]) 
-
-
     def _build_model(self):
-        self.model = BartForEHRSimulation(self.configuration, self.model_tokenizer)
+        self.model = BartForEHRSimulation(self.configuration, self.model_tokenizer, self.data_tokenizer)
+
+        # check if cuda is available using torch
+        if not torch.cuda.is_available():
+            warnings.warn('No GPU found, using CPU instead.')
+            self.device = 'cpu'
 
         if isinstance(self.device, list): 
             self._set_visible_device(self.device)
@@ -680,10 +683,15 @@ class PromptEHR(nn.Module):
                     # randomly pick / rm sub code overlap
                     new_next_tokens = new_next_tokens[:,1:-1]
                     new_next_tokens = np.setdiff1d(new_next_tokens[0].cpu(), code_prompt_idx[0].cpu())
-                    if num_code-len(sub_code) > len(new_next_tokens):
-                        new_sub_idxs = np.unique(np.random.choice(np.arange(len(new_next_tokens)), num_code-len(sub_code), replace=True))
-                    else:
-                        new_sub_idxs = np.unique(np.random.choice(np.arange(len(new_next_tokens)), num_code-len(sub_code), replace=False))
+                    
+                    try:
+                        if num_code-len(sub_code) > len(new_next_tokens):
+                            new_sub_idxs = np.unique(np.random.choice(np.arange(len(new_next_tokens)), num_code-len(sub_code), replace=True))
+                        else:
+                            new_sub_idxs = np.unique(np.random.choice(np.arange(len(new_next_tokens)), num_code-len(sub_code), replace=False))
+                    except:
+                        pdb.set_trace()
+                        pass
                     new_next_tokens = torch.tensor(new_next_tokens[None, new_sub_idxs]).to(code_prompt_idx.device)
 
                     # append to the synthetic record dict

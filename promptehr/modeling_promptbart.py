@@ -158,7 +158,10 @@ class BartLearnedPositionalEmbedding(nn.Embedding):
         positions = torch.arange(
             past_key_values_length, past_key_values_length + seq_len, dtype=torch.long, device=self.weight.device
         )
-        return super().forward(positions + self.offset)
+        positions = positions + self.offset
+        positions = torch.minimum(positions, torch.ones_like(positions).to(positions.device)*1024)
+        res = super().forward(positions)
+        return res
 
 class PromptBartEncoder(BartEncoder):
     def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None):
