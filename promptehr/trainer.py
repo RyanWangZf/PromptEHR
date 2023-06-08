@@ -383,7 +383,11 @@ class PromptEHRTrainer(Trainer):
                     loss, outputs = self.compute_loss(model, inputs, return_outputs=True, return_perplexity=True)
 
                 if loss is not None:
-                    loss = loss.item() # return ppl is a 0-d tensor
+                    if not isinstance(loss, torch.Tensor):
+                        # if more than one device is used
+                        raise ValueError("In prediction phase only one GPU should be used, expected `torch.Tensor` loss, get `{}` instead.".format(type(loss)))
+                    else:
+                        loss = loss.item() # return ppl is a 0-d tensor
                     loss = torch.tensor([loss])
 
                 if isinstance(outputs, dict):

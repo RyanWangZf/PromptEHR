@@ -35,9 +35,10 @@ def load_synthetic_data(input_dir='./demo_data/synthetic_ehr', n_sample=None):
     '''
     Load the generated synthetic EHRs by PromptEHR.
     '''
-    if input_dir is None or not os.path.exists(input_dir):
-        if input_dir is None:
-            input_dir = './demo_data/synthetic_ehr'
+    if input_dir is None:
+        input_dir = './demo_data/synthetic_ehr'
+
+    if not os.path.exists(input_dir):
         os.makedirs(input_dir)
         url = constants.SYNTHETIC_DATA_URL
         filename = wget.download(url, out=input_dir)
